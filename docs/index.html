@@ -1,397 +1,885 @@
-<!doctype html>
-<html lang="pt-br">
+<!DOCTYPE html>
+<html lang="pt-BR">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-<title>Dual HTML Lab — Editor • Visualizador • Analisador</title>
-<meta name="theme-color" content="#0b0e14">
-<link rel="manifest" href="manifest.webmanifest">
-<style>
-  :root{
-    --bg:#0b0e14; --panel:#101626; --glass:rgba(255,255,255,.06); --stroke:rgba(255,255,255,.12);
-    --txt:#EAF2FF; --muted:#9fb1cc; --a:#29d3ff; --b:#8a5cff; --ok:#2fe66a; --warn:#ffd166; --err:#ff4d6d;
-    --r:16px; --shadow:0 16px 60px rgba(0,0,0,.4); --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "JetBrains Mono", "Liberation Mono", monospace;
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dual Atom v14 — Nexus Unificado (WebGL + Manifesto + Persistência)</title>
+<meta name="theme-color" content="#0a0b10">
+
+<!-- =====================================================================
+     Firebase (estado persistente) — carrega como ES module e expõe no window
+     ===================================================================== -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+  import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+  import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+  import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+  // Variáveis globais (opcionais) — fornecidas pelo invocador/host
+  const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+  const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+  const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+  let db, auth;
+  let userId = 'anon';
+
+  function colPath(uid){ return `/artifacts/${appId}/users/${uid}/atom_state`; }
+  function docRef(uid){ return doc(db, colPath(uid), 'orb_manifest'); }
+
+  async function saveState(state){
+    if (!db || !userId) return;
+    try{
+      const toSave = { ...state, lastUpdate: new Date().toISOString() };
+      delete toSave.transitioning;
+      await setDoc(docRef(userId), toSave, { merge: true });
+    }catch(e){ console.error('[FIREBASE] Erro ao salvar:', e); }
   }
-  *{box-sizing:border-box} html,body{height:100%}
-  body{margin:0;background:
-      radial-gradient(1100px 600px at 70% -10%, #17203a 0%, transparent 60%),
-      radial-gradient(1200px 700px at -10% 110%, #0f1426 0%, transparent 60%),
-      var(--bg);
-    color:var(--txt); font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif; }
-  .wrap{min-height:100%; display:grid; grid-template-rows:auto auto 1fr auto; gap:12px; padding:14px}
-  header{display:flex; align-items:center; justify-content:space-between; gap:10px}
-  .brand{display:flex; align-items:center; gap:10px}
-  .logo{width:36px;height:36px;border-radius:12px;background:conic-gradient(from 0deg, var(--a), var(--b), var(--a));
-        box-shadow:0 0 0 2px var(--stroke) inset, 0 6px 18px rgba(0,0,0,.45)}
-  .title{font-weight:800;letter-spacing:.2px}
-  .gear{border:1px solid var(--stroke);border-radius:12px;padding:8px 10px;background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));cursor:pointer}
-  .tabs{display:flex; gap:8px; overflow:auto; padding-bottom:2px}
-  .tab{display:flex; align-items:center; gap:8px; padding:8px 10px; border:1px solid var(--stroke); border-radius:999px;
-       background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03)); cursor:pointer; white-space:nowrap}
-  .tab.sel{outline:2px solid var(--a)}
-  .btn{appearance:none;border:1px solid var(--stroke);background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
-       padding:10px 12px;border-radius:14px;color:var(--txt);font-weight:700;letter-spacing:.2px;transition:.2s;cursor:pointer}
-  .btn:active{transform:translateY(1px)}
-  .btn.ok{border-color:rgba(47,230,106,.25)}
-  .grid{display:grid; gap:10px}
-  .cols-2{grid-template-columns:1fr 1fr}
-  .card{background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02)); border:1px solid var(--stroke); border-radius:var(--r); box-shadow:var(--shadow)}
-  .hd{padding:12px 14px; border-bottom:1px solid var(--stroke); display:flex; align-items:center; justify-content:space-between}
-  .bd{padding:12px 14px}
-  /* Editor/Preview split */
-  .split{display:grid; gap:10px; grid-template-columns:1fr; }
-  @media(min-width:860px){ .split{grid-template-columns:1fr 1fr} }
-  #editor{height:52vh; border:1px solid var(--stroke); border-radius:12px; overflow:hidden}
-  #previewWrap{height:52vh; border:1px solid var(--stroke); border-radius:12px; overflow:hidden; position:relative}
-  #preview{width:100%; height:100%; border:0; background:#0a111f}
-  .toolbar{display:flex; gap:8px; flex-wrap:wrap}
-  .console{background:#0a111f;border:1px solid #0b1d38;border-radius:14px;padding:10px; font-family: var(--mono); font-size:12px; max-height:200px; overflow:auto}
-  .line{display:flex; gap:8px; margin:2px 0}
-  .tag{padding:2px 8px;border-radius:8px;border:1px solid var(--stroke);font-size:11px;color:#a3b7d9;background:rgba(255,255,255,.03)}
-  .val{white-space:pre-wrap; word-wrap:break-word}
-  footer{opacity:.7; font-size:12px; text-align:center; padding-bottom:8px}
-  .badge{border:1px dashed var(--stroke);padding:4px 8px;border-radius:999px;font-size:12px;color:var(--muted)}
-  .side{display:grid; gap:8px}
-  .pill{display:inline-grid; place-items:center; width:44px;height:44px;border-radius:999px;border:1px solid var(--stroke);
-        background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03)); font-weight:800}
-  .fullbtn{position:absolute; right:8px; top:8px}
+
+  function startListeners(){
+    if (!db || !userId) return;
+    const ref = docRef(userId);
+    onSnapshot(ref, (snap)=>{
+      if (snap.exists()){
+        const loaded = snap.data();
+        // Carrega somente campos conhecidos (merge suave)
+        window.S = window.S || { state:{}, config:{} };
+        const st = window.S.state;
+        st.view           = loaded.view ?? st.view;
+        st.orbMode        = loaded.orbMode ?? st.orbMode;
+        st.quanCharge     = loaded.quanCharge ?? st.quanCharge;
+        st.manifestoOpen  = loaded.manifestoOpen ?? st.manifestoOpen;
+        st.estojoItems    = loaded.estojoItems ?? st.estojoItems;
+        st.lojaItems      = loaded.lojaItems ?? st.lojaItems;
+        st.activated      = loaded.activated ?? st.activated;
+        st.openModule     = loaded.openModule ?? st.openModule;
+        window.renderState && window.renderState();
+        console.log('[FIREBASE] Estado sincronizado do Manifesto.');
+      }else{
+        console.log('[FIREBASE] Primeiro uso — salvando estado inicial.');
+        saveState(window.S.state);
+      }
+    }, (err)=> console.error('[FIREBASE] onSnapshot error:', err));
+  }
+
+  async function initFirebase(){
+    if (!firebaseConfig){ console.warn('[FIREBASE] Config não fornecida. Operando LOCAL.'); return; }
+    const app = initializeApp(firebaseConfig);
+    db = getFirestore(app);
+    auth = getAuth(app);
+    setLogLevel('debug');
+
+    try{
+      if (initialAuthToken){
+        const cred = await signInWithCustomToken(auth, initialAuthToken);
+        userId = cred.user.uid;
+      }else{
+        const anon = await signInAnonymously(auth);
+        userId = anon.user.uid;
+      }
+    }catch(e){
+      console.error('[FIREBASE] Falha na autenticação — continuará LOCAL:', e);
+      return;
+    }
+
+    window.db = db;
+    window.auth = auth;
+    window.userId = userId;
+    window.saveState = saveState;
+    startListeners();
+  }
+
+  // expõe no escopo global
+  window.initFirebase = initFirebase;
+  window.saveState = saveState;
+  window.userId = userId;
+  window.appId = appId;
+</script>
+
+<style>
+  /* =================== BASE / TEMA (v13) =================== */
+  :root{
+    --bg0:#07080d; --bg1:#0d1020;
+    --nebA:#7a3cff; --nebB:#00e5ff;
+    --txt:#eaf2ff; --muted:#a6b0c0;
+    --ring:rgba(255,255,255,.16);
+    --glass:rgba(255,255,255,.06);
+    --blur:blur(12px);
+    --radius:18px;
+    --shadow:0 18px 60px rgba(0,0,0,.55), inset 0 0 80px rgba(255,255,255,.04);
+    --size-orb:min(62vw, 420px);
+    --hud-size:64px;
+    --hud-gap:18px;
+    --ease:cubic-bezier(.2,.8,.2,1);
+    --ok:#39FFB6; --err:#FF5C8A; --info:#7EC8FF;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;
+    font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    color:var(--txt);
+    background: radial-gradient(140% 120% at 50% 0%, #14183a 0%, #0c0f22 55%, #07080d 100%);
+    overflow:hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .container {
+    width: 100%;
+    max-width: 600px;
+    height: 100dvh;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* HUD */
+  .hud-bar {
+    z-index: 50; display: flex; justify-content: space-between; align-items: center;
+    padding: 14px; background: transparent;
+  }
+  .btn-ctrl {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 12px; border-radius: var(--radius);
+    background: var(--glass); border: 1px solid var(--ring); color: var(--txt);
+    cursor: pointer; font-size: 14px; font-weight: 600;
+    transition: transform .2s ease;
+    -webkit-tap-highlight-color: rgba(255,255,255,.1);
+  }
+  .btn-ctrl:active{ transform: scale(.96); }
+  .btn-ctrl svg{ width: 20px; height: 20px; stroke-width: 2; }
+  .btn-glow{ box-shadow: 0 0 12px rgba(0, 229, 255, 0.4); }
+
+  /* STAGE */
+  .stage{ flex:1; position:relative; display:grid; place-items:center; overflow:hidden; }
+
+  /* ORB CONTAINER (v14 = v11 canvases + v13 rótulos) */
+  .orb-wrap{
+    position:relative; width:var(--size-orb); height:var(--size-orb);
+    display:grid; place-items:center; filter: drop-shadow(0 30px 60px rgba(0,0,0,.65));
+    transition: transform 1s var(--ease), opacity 1s var(--ease);
+  }
+  canvas#orbGL, canvas#particles{
+    position:absolute; inset:0; width:100%; height:100%; border-radius:50%; display:block;
+  }
+  .orb-glow{ position:absolute; inset:-10%; border-radius:50%; pointer-events:none;
+    background: radial-gradient(60% 60% at 50% 50%, rgba(122,60,255,.18), rgba(0,229,255,.14) 45%, rgba(0,0,0,0) 70%);
+    filter: blur(18px); opacity:.9; transition: opacity .6s ease;
+  }
+  .ring{ position:absolute; inset:-8%; border-radius:50%; pointer-events:none;
+    background: radial-gradient(80% 80% at 50% 50%, rgba(255,255,255,.12), rgba(255,255,255,0) 42%);
+  }
+  .orb-label{
+    position:absolute; inset:auto 0 22px 0; text-align:center;
+    font-size: 16px; font-weight:800; letter-spacing:1px; text-transform:uppercase;
+    text-shadow: 0 0 8px rgba(0,0,0,.5);
+  }
+  #orbCharge{ position:absolute; bottom:-16px; width:100%; text-align:center; font-size:12px; color:var(--info); }
+
+  /* CALL (v11) */
+  .call{
+    position:absolute; bottom: 26px; left:50%; transform: translateX(-50%);
+    color:var(--muted); font-size:12px; letter-spacing:.3px; opacity:.9; text-align:center; white-space:nowrap; pointer-events:none;
+  }
+
+  /* OPTIONS AROUND ORB (v11) */
+  .options{ position:absolute; inset:0; pointer-events:none; }
+  .opt{
+    position:absolute; width:var(--hud-size); height:var(--hud-size);
+    border-radius:16px; border:1px solid var(--ring); background:var(--glass);
+    box-shadow: var(--shadow); backdrop-filter: var(--blur);
+    display:grid; place-items:center; transition: transform .18s ease, opacity .4s ease;
+    opacity:0; pointer-events:none;
+  }
+  .opt svg{ width:28px; height:28px; stroke:#deebff; stroke-width:2; fill:none; stroke-linecap:round; stroke-linejoin:round; }
+  .opt .lab{ position:absolute; bottom:-20px; font-size:11px; color:var(--muted); }
+  .options.active .opt{ opacity:1; pointer-events:auto; }
+  .opt:active{ transform:scale(.98); }
+  .opt.fenda    { top:  calc(50% - var(--size-orb)/2 - var(--hud-gap) - var(--hud-size)); left: calc(50% - var(--hud-size) - var(--hud-gap)); }
+  .opt.sigilo   { top:  calc(50% - var(--size-orb)/2 - var(--hud-gap) - var(--hud-size)); left: calc(50% + var(--hud-gap)); }
+  .opt.chaves   { top:  calc(50% + var(--size-orb)/2 + var(--hud-gap)); left: calc(50% - var(--hud-size) - var(--hud-gap)); }
+  .opt.playlist { top:  calc(50% + var(--size-orb)/2 + var(--hud-gap)); left: calc(50% + var(--hud-gap)); }
+
+  /* PAINEL SECUNDÁRIO (v13) */
+  .panel-secundario{
+    position:absolute; top:0; left:0; width:100%; height:100%;
+    transform: translateY(100%); opacity:0; pointer-events:none;
+    transition: transform .6s var(--ease), opacity .6s var(--ease);
+    background: var(--bg0); padding: 28px; display:flex; flex-direction:column; overflow-y:auto; z-index:60;
+  }
+  .panel-secundario.open{ transform: translateY(0); opacity:1; pointer-events:all; }
+  .panel-header{ display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
+  .panel-header h2{ margin:0; font-size:22px; font-weight:800; }
+  .item-list{ display:grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap:14px; padding-top:10px; }
+  .item-card{ background:var(--glass); border:1px solid var(--ring); border-radius:var(--radius); padding:12px; text-align:center; }
+  .buy-btn{ appearance:none; border:1px solid var(--ring); background:var(--nebB); color:#0a0b10; font-weight:800; border-radius:12px; font-size:12px; padding:8px 10px; cursor:pointer; }
+
+  .orb-wrap.is-out{ transform: translateY(-20%) scale(0.6); opacity:0; }
+
+  /* MANIFESTO (v13) */
+  .manifesto-panel{ position:fixed; inset:0; background: rgba(13, 16, 32, 0.92); backdrop-filter: var(--blur); z-index:100;
+    display:flex; flex-direction:column; padding:14px; opacity:0; pointer-events:none; transition:opacity .4s var(--ease);
+  }
+  .manifesto-panel.open{ opacity:1; pointer-events:all; }
+  .manifesto-content{ flex:1; background:var(--glass); border:1px solid var(--ring); border-radius:var(--radius); padding:14px; overflow:auto; box-shadow:var(--shadow); }
+  .manifesto-content h2{ color:var(--nebB); margin-top:0; font-weight:800; text-transform:uppercase; letter-spacing:1px; }
+  .manifesto-content pre{ background: rgba(0,0,0,.3); padding:10px; border-radius:8px; font-size:12px; overflow-x:auto; color: var(--ok); margin-top:8px; }
+  .text-nebula-t{ color:var(--ok); } .text-nebula-m{ color:var(--nebA); }
+
+  /* MODAL DE MÓDULOS (v11) */
+  .backdrop{ position:fixed; inset:0; background: rgba(4,6,10,.25); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); display:none; z-index:90; }
+  .backdrop.active{ display:block; }
+  .card{ position:fixed; inset:24px 16px; border-radius:var(--radius); border:1px solid var(--ring);
+    background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+    box-shadow: 0 30px 80px rgba(0,0,0,.6), inset 0 0 80px rgba(255,255,255,.04);
+    display:none; z-index:91; transform: translateY(10px); opacity:0; transition: transform .25s ease, opacity .25s ease; overflow:hidden;
+  }
+  .card.active{ display:block; transform: translateY(0); opacity:1; }
+  .card header{ display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,.08);
+    background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,0)); }
+  .card header h3{ margin:0; font-size:14px; letter-spacing:.3px; color:#eaf2ff; }
+  .card header .act{ display:flex; gap:8px; }
+  .btn{ appearance:none; border:1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.06); color:var(--txt);
+    padding:6px 10px; border-radius:10px; font-size:12px; letter-spacing:.2px; display:inline-flex; align-items:center; gap:8px; cursor:pointer;
+    backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+  }
+  .btn:hover{ background: rgba(255,255,255,.10); }
+  .card .content{ position:absolute; inset:48px 12px 12px 12px; overflow:auto; border-radius:12px; }
+  .mod-section{ display:grid; gap:12px; background: rgba(5,8,14,.6); border:1px solid rgba(255,255,255,.08); border-radius:12px; padding:12px; }
+  .row{ display:grid; gap:8px; }
+  label{ font-size:12px; color:var(--muted); }
+  input, textarea{ width:100%; padding:10px 12px; border-radius:10px; border:1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.05); color:var(--txt); outline:none; }
+  .pill{ padding:6px 10px; border-radius:999px; border:1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.06); font-size:12px; color:var(--muted); display:inline-flex; gap:8px; align-items:center; }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <div class="brand">
-      <div class="logo"></div>
-      <div>
-        <div class="title">Dual HTML Lab</div>
-        <div style="opacity:.7;font-size:12px">Editor • Visualizador • Analisador (PWA)</div>
-      </div>
-    </div>
-    <div class="toolbar">
-      <button class="gear" id="btnInstall">➕ Instalar</button>
-      <button class="gear" id="btnTheme">🌈 Tema</button>
-      <button class="gear" id="btnPro">⚙︎ Pro</button>
-    </div>
+
+<div class="container">
+
+  <!-- HUD -->
+  <header class="hud-bar">
+    <button id="btnSwitchMode" class="btn-ctrl" aria-label="Alternar Estojo/Loja"></button>
+    <span id="userIdDisplay" class="text-xs" style="opacity:.8">UID: ...</span>
+    <button id="btnManifesto" class="btn-ctrl btn-glow" aria-label="Abrir Manifesto"></button>
   </header>
 
-  <div class="tabs" id="tabs"></div>
-
-  <section class="card">
-    <div class="hd">
-      <b>Editor</b>
-      <div class="toolbar">
-        <input type="file" id="fileInput" accept=".html,.htm" multiple style="display:none" />
-        <button class="btn" id="btnNew">＋ Página</button>
-        <button class="btn" id="btnUpload">⬆️ Upload</button>
-        <button class="btn" id="btnFetch">🔗 Buscar URL</button>
-        <button class="btn" id="btnSave">💾 Salvar</button>
-        <button class="btn" id="btnExport">⇪ Exportar .html</button>
-        <button class="btn" id="btnZip">🗜 Exportar ZIP</button>
-        <span class="badge" id="badgeMode">Live Preview: scripts ON</span>
-        <button class="btn" id="btnSafe">🛡 Safe (sem scripts)</button>
-      </div>
+  <!-- STAGE -->
+  <main class="stage" id="stage">
+    <div id="orbWrap" class="orb-wrap" aria-label="Orbe Nebula">
+      <canvas id="orbGL"></canvas>
+      <div id="orbGlow" class="orb-glow"></div>
+      <canvas id="particles"></canvas>
+      <div class="ring"></div>
+      <div id="orbLabel" class="orb-label">MODO UNO</div>
+      <div id="orbCharge">Carga QUAN: 0%</div>
     </div>
-    <div class="bd split">
-      <div id="editor"></div>
-      <div id="previewWrap">
-        <iframe id="preview" sandbox="allow-scripts allow-same-origin"></iframe>
-        <button class="btn fullbtn" id="btnFull">⛶ Tela Cheia</button>
-      </div>
+
+    <!-- CHAMADA INICIAL -->
+    <div class="call" id="call">Toque o orbe para ativar · “Sempre único, sempre seu”.</div>
+
+    <!-- OPÇÕES (aparecem só após o primeiro toque) -->
+    <div class="options" id="options">
+      <button class="opt fenda" data-open="fenda" aria-label="Abrir Fenda">
+        <svg viewBox="0 0 24 24"><path d="M12 2l8 4-8 4-8-4 8-4Z"/><path d="M4 6v8l8 4 8-4V6"/><path d="M12 10v8"/></svg><div class="lab">Fenda</div>
+      </button>
+      <button class="opt sigilo" data-open="sigilo" aria-label="Abrir Sigilo">
+        <svg viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M5 9h14"/><path d="M7 15h10"/><path d="M6 6l3 3-3 3"/><path d="M18 6l-3 3 3 3"/></svg><div class="lab">Sigilo</div>
+      </button>
+      <button class="opt chaves" data-open="chaves" aria-label="Abrir Chaves">
+        <svg viewBox="0 0 24 24"><circle cx="7" cy="7" r="3"/><path d="M9 9l8 8"/><path d="M14 14l3 3l2-2l-3-3"/><path d="M6 10l2 2"/></svg><div class="lab">Chaves</div>
+      </button>
+      <button class="opt playlist" data-open="playlist" aria-label="Abrir Playlist">
+        <svg viewBox="0 0 24 24"><path d="M4 6h12"/><path d="M4 10h12"/><path d="M4 14h8"/><circle cx="18" cy="16" r="3"/></svg><div class="lab">Playlist</div>
+      </button>
     </div>
-  </section>
 
-  <section class="card">
-    <div class="hd"><b>Analisador</b><div class="toolbar"><button class="btn" id="btnAnalyze">🔍 Analisar</button></div></div>
-    <div class="bd grid cols-2">
-      <div class="side">
-        <div><b>IDs</b> <span class="badge" id="countIds">0</span><div id="listIds" style="max-height:120px;overflow:auto;font-family:var(--mono);font-size:12px"></div></div>
-        <div><b>Classes</b> <span class="badge" id="countClasses">0</span><div id="listClasses" style="max-height:120px;overflow:auto;font-family:var(--mono);font-size:12px"></div></div>
+    <!-- PAINEL SECUNDÁRIO (Estojo/Loja) -->
+    <div id="panelSecundario" class="panel-secundario" aria-live="polite">
+      <div class="panel-header">
+        <h2 id="panelTitle">Estojo</h2>
+        <button id="btnBackToOrb" class="btn-ctrl" aria-label="Voltar ao Orbe"></button>
       </div>
-      <div class="side">
-        <div><b>Stylesheets / Styles</b> <span class="badge" id="countStyles">0</span><div id="listStyles" style="max-height:120px;overflow:auto;font-family:var(--mono);font-size:12px"></div></div>
-        <div><b>Scripts</b> <span class="badge" id="countScripts">0</span><div id="listScripts" style="max-height:120px;overflow:auto;font-family:var(--mono);font-size:12px"></div></div>
-        <div><b>Custom Elements</b> <span class="badge" id="countCustom">0</span><div id="listCustom" style="max-height:120px;overflow:auto;font-family:var(--mono);font-size:12px"></div></div>
-      </div>
+      <div id="panelContent" class="item-list"></div>
     </div>
-  </section>
+  </main>
 
-  <section class="card">
-    <div class="hd"><b>Console</b><small class="badge">logs</small></div>
-    <div class="bd console" id="console"></div>
-  </section>
-
-  <footer>Do seu jeito. Sempre único, sempre seu.</footer>
-</div>
-
-<!-- PRO Modal -->
-<div id="modal" style="position:fixed;inset:0;background:rgba(0,0,0,.45);backdrop-filter:blur(10px);display:none;align-items:center;justify-content:center">
-  <div class="card" style="width:min(720px,92vw)">
-    <div class="hd"><b>Opções Pro</b><button class="btn" id="btnClose">✕</button></div>
-    <div class="bd grid cols-2">
-      <div class="side">
-        <div class="toolbar"><button class="btn pill" id="btnClearLS">LS</button><span class="badge">Limpar armazenamento</span></div>
-        <div class="toolbar"><button class="btn pill" id="btnImportPages">⇩</button><span class="badge">Importar páginas (.zip/.json)</span><input id="inputImport" type="file" accept=".zip,.json" style="display:none"/></div>
-        <div class="toolbar"><button class="btn pill" id="btnExportPages">⇪</button><span class="badge">Exportar todas as páginas</span></div>
+  <!-- MANIFESTO (Nexus) -->
+  <div id="manifestoPanel" class="manifesto-panel" aria-modal="true" role="dialog">
+    <div class="manifesto-content">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px">
+        <h2>Manifesto Central (Nexus)</h2>
+        <button id="btnCloseManifesto" class="btn-ctrl" aria-label="Fechar Manifesto"></button>
       </div>
-      <div class="side">
-        <div><b>Raw HTML atual</b><textarea id="raw" style="width:100%;height:140px;background:#0a111f;border:1px solid #0b1d38;border-radius:12px;color:#cde0ff;font-family:var(--mono);font-size:12px"></textarea></div>
+      <div id="manifestoStatus">
+        <p class="muted">Carregando dados unificados...</p>
       </div>
     </div>
   </div>
+
 </div>
 
-<!-- CodeMirror 6 (ESM via esm.sh) -->
-<script type="module">
-  import {EditorState} from "https://esm.sh/@codemirror/state@6";
-  import {EditorView, keymap, highlightActiveLine} from "https://esm.sh/@codemirror/view@6";
-  import {defaultKeymap, history, historyKeymap} from "https://esm.sh/@codemirror/commands@6";
-  import {html} from "https://esm.sh/@codemirror/lang-html@6";
-  import {oneDark} from "https://esm.sh/@codemirror/theme-one-dark@6";
+<!-- MODAL DOS MÓDULOS (v11) -->
+<div class="backdrop" id="backdrop"></div>
+<section class="card" id="card" aria-modal="true" role="dialog">
+  <header>
+    <h3 id="cardTitle">Módulo</h3>
+    <div class="act">
+      <button class="btn" id="btnCloseCard" aria-label="Fechar Módulo"></button>
+    </div>
+  </header>
+  <div class="content" id="cardContent"></div>
+</section>
 
-  const $ = (s, c=document)=>c.querySelector(s);
-  const consoleEl = $("#console");
-  const tabsEl = $("#tabs");
-  const preview = $("#preview");
-  const editorParent = $("#editor");
-  const rawTa = $("#raw");
+<script>
+/* ==========================================================================
+   ESTADO UNIFICADO (S) — combina v13 (view/orb/estojo/loja/manifesto) com v11 (activated/módulos)
+   ========================================================================== */
+const S = {
+  state: {
+    view: 'orb',                // 'orb' | 'estojo' | 'loja'
+    orbMode: 'uno',             // 'uno' | 'dual' | 'trinity'
+    quanCharge: 0.0,            // 0..100
+    manifestoOpen: false,       // painel Nexus
+    transitioning: false,       // lock de transição
+    estojoItems: [
+      { id: 'item1', name: 'Essência C', count: 2, price: 100 },
+      { id: 'item2', name: 'Essência M', count: 1, price: 100 },
+      { id: 'item3', name: 'Essência T', count: 5, price: 100 },
+    ],
+    lojaItems: [
+      { id: 'l_item1', name: 'Aprimoramento X', price: 150, owned: false },
+      { id: 'l_item2', name: 'Aprimoramento Y', price: 220, owned: false },
+    ],
+    // v11
+    activated: false,           // habilita opções
+    openModule: null            // 'fenda' | 'sigilo' | 'chaves' | 'playlist' | null
+  },
+  config: {
+    modules: {
+      htmlViewer: true,
+      musicPlayer: false,
+    }
+  }
+};
 
-  const state = {
-    pages: JSON.parse(localStorage.getItem("dual.pages")||"[]"),
-    current: null,
-    safe: false, // safe preview (no scripts) toggle
-    theme: localStorage.getItem("dual.theme")||"dark"
+// Helpers DOM
+const $ = (id)=> document.getElementById(id);
+const text = (t)=> document.createTextNode(t);
+
+// Ícones SVG (ampliado)
+function icon(name){
+  const ns='http://www.w3.org/2000/svg';
+  const s=document.createElementNS(ns,'svg'); s.setAttribute('viewBox','0 0 24 24'); s.setAttribute('stroke','currentColor'); s.setAttribute('stroke-width','2'); s.setAttribute('fill','none'); s.setAttribute('aria-hidden','true');
+  const P=(d)=>{ const p=document.createElementNS(ns,'path'); p.setAttribute('d',d); p.setAttribute('stroke-linecap','round'); p.setAttribute('stroke-linejoin','round'); return p; };
+  if(name==='sigil'){ s.append(P('M12 3v18')); s.append(P('M5 9h14')); s.append(P('M7 15h10')); s.append(P('M6 6l3 3-3 3')); s.append(P('M18 6l-3 3 3 3')); }
+  if(name==='cube'){ s.append(P('M12 2l8 4-8 4-8-4 8-4Z')); s.append(P('M4 6v8l8 4 8-4V6')); s.append(P('M12 10v8')); }
+  if(name==='cart'){ s.append(P('M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z')); s.append(P('M3 6h18')); s.append(P('M16 10a4 4 0 0 1-8 0')); }
+  if(name==='close'){ s.append(P('M18 6L6 18')); s.append(P('M6 6l12 12')); }
+  if(name==='spark'){ s.append(P('M12 2l1.8 4.5L18 8l-4.2 1.4L12 14l-1.8-4.6L6 8l4.2-1.5L12 2z')); }
+  if(name==='lock'){ s.append(P('M7 11V8a5 5 0 0 1 10 0v3')); s.append(P('M6 11h12v9H6z')); }
+  if(name==='check'){ s.append(P('M4 12l5 5L20 6')); }
+  if(name==='save'){ s.append(P('M5 4h14v16H5z')); s.append(P('M8 4v5h8V4')); }
+  if(name==='trash'){ s.append(P('M4 7h16')); s.append(P('M6 7l1 13h10l1-13')); s.append(P('M9 7V4h6v3')); }
+  if(name==='keys'){ s.append(P('M7 5a3 3 0 1 1 0 6a3 3 0 0 1 0-6z')); s.append(P('M9 9l8 8')); s.append(P('M14 14l3 3l2-2l-3-3')); }
+  if(name==='music'){ s.append(P('M9 18a3 3 0 1 0 0-6 3 3 0 0 0 0 6z')); s.append(P('M12 6v8')); s.append(P('M12 6l7-2v8')); }
+  return s;
+}
+
+/* ==========================================================================
+   WEBGL ORB (adaptado do v11)
+   ========================================================================== */
+(function(){
+  const canvas = document.getElementById('orbGL');
+  const gl = canvas.getContext('webgl', { antialias: true, alpha: true });
+  if (!gl) return;
+
+  const dpr = Math.min(2, (window.devicePixelRatio||1));
+  function resize(){
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = Math.floor(rect.width * dpr);
+    canvas.height = Math.floor(rect.height * dpr);
+    gl.viewport(0,0,canvas.width, canvas.height);
+  }
+  new ResizeObserver(resize).observe(canvas);
+  resize();
+
+  const vs = `
+    attribute vec2 aPos;
+    varying vec2 vUv;
+    void main(){
+      vUv = aPos * 0.5 + 0.5;
+      gl_Position = vec4(aPos, 0.0, 1.0);
+    }`;
+
+  const fs = `
+    precision highp float;
+    varying vec2 vUv;
+    uniform vec2 u_res;
+    uniform float u_time;
+    uniform float u_active;
+
+    float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453123); }
+    float noise(in vec2 p){
+      vec2 i = floor(p);
+      vec2 f = fract(p);
+      float a = hash(i);
+      float b = hash(i + vec2(1.0, 0.0));
+      float c = hash(i + vec2(0.0, 1.0));
+      float d = hash(i + vec2(1.0, 1.0));
+      vec2 u = f*f*(3.0-2.0*f);
+      return mix(a, b, u.x) + (c - a)*u.y*(1.0 - u.x) + (d - b)*u.x*u.y;
+    }
+
+    vec3 camPos(){ return vec3(0.0, 0.0, 3.0); }
+    vec3 getRay(vec2 uv){
+      uv = (uv * 2.0 - 1.0);
+      uv.x *= u_res.x / u_res.y;
+      vec3 rd = normalize(vec3(uv, -1.8));
+      return rd;
+    }
+
+    bool intersectSphere(vec3 ro, vec3 rd, float r, out float t){
+      float b = dot(ro, rd);
+      float c = dot(ro, ro) - r*r;
+      float h = b*b - c;
+      if(h < 0.0){ t = -1.0; return false; }
+      h = sqrt(h);
+      t = -b - h;
+      if(t < 0.0) t = -b + h;
+      if(t < 0.0) return false;
+      return true;
+    }
+
+    void main(){
+      vec2 uv = vUv;
+      vec3 ro = camPos();
+      vec3 rd = getRay(uv);
+
+      float t;
+      vec3 col = vec3(0.02,0.03,0.07);
+      vec3 fogCol = vec3(0.07,0.09,0.16);
+
+      // halo/nebulosa de fundo
+      float g = noise(uv*6.0 + u_time*0.05) * 0.25;
+      col += vec3(0.25,0.08,0.55) * g * 0.6 + vec3(0.0,0.35,0.55) * g * 0.4;
+
+      if(intersectSphere(ro, rd, 1.0, t)){
+        vec3 p = ro + rd * t;
+        vec3 n = normalize(p);
+
+        float bands = 0.5 + 0.5*sin(6.0*p.x + 5.0*p.y + u_time*0.6);
+        float swirl = noise(p.xy*4.0 + u_time*0.2);
+        vec3 nebA = vec3(0.52, 0.24, 1.00);
+        vec3 nebB = vec3(0.00, 0.90, 1.00);
+        vec3 base = mix(nebA, nebB, clamp(bands*0.6 + swirl*0.4, 0.0, 1.0));
+
+        vec3 L = normalize(vec3(0.6, 0.7, 0.5));
+        float diff = max(dot(n, L), 0.0);
+        float rim = pow(1.0 - max(dot(n, -rd), 0.0), 2.0);
+
+        float pulse = 0.5 + 0.5*sin(u_time*1.5);
+        float act = mix(0.6, 1.0, u_active);
+        vec3 c = base * (0.35 + 0.75*diff*act) + (nebB*0.6 + nebA*0.4) * rim * (0.6 + 0.4*pulse);
+
+        float fogAmt = 1.0 - exp(-t * 0.35);
+        col = mix(c, fogCol, fogAmt*0.25);
+      } else {
+        vec2 centered = uv - 0.5;
+        centered.x *= u_res.x/u_res.y;
+        float d = length(centered);
+        float outer = smoothstep(0.58, 0.12, d);
+        vec3 halo = vec3(0.25,0.12,0.55)*outer*0.35 + vec3(0.00,0.55,0.95)*outer*0.25;
+        col += halo;
+      }
+
+      float vign = smoothstep(1.2, 0.55, length((uv-0.5)*vec2(u_res.x/u_res.y,1.0)));
+      col *= vign;
+
+      gl_FragColor = vec4(col, 0.98);
+    }`;
+
+  function compile(t, src){
+    const s = gl.createShader(t);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)){
+      console.error(gl.getShaderInfoLog(s));
+      return null;
+    }
+    return s;
+  }
+  const vShader = compile(gl.VERTEX_SHADER, vs);
+  const fShader = compile(gl.FRAGMENT_SHADER, fs);
+  const prog = gl.createProgram();
+  gl.attachShader(prog, vShader); gl.attachShader(prog, fShader); gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) console.error(gl.getProgramInfoLog(prog));
+  gl.useProgram(prog);
+
+  const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1, 1,-1,1,1,-1,1]), gl.STATIC_DRAW);
+  const locPos = gl.getAttribLocation(prog, 'aPos');
+  gl.enableVertexAttribArray(locPos);
+  gl.vertexAttribPointer(locPos, 2, gl.FLOAT, false, 0, 0);
+
+  const uRes = gl.getUniformLocation(prog, 'u_res');
+  const uTime = gl.getUniformLocation(prog, 'u_time');
+  const uActive = gl.getUniformLocation(prog, 'u_active');
+
+  let start = performance.now();
+  let active = 0.0;
+
+  function draw(){
+    const t = (performance.now() - start) * 0.001;
+    gl.uniform2f(uRes, canvas.width, canvas.height);
+    gl.uniform1f(uTime, t);
+    gl.uniform1f(uActive, active);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    requestAnimationFrame(draw);
+  }
+  draw();
+
+  window.__orbGL__ = {
+    setActive: (v)=>{ active = v?1.0:0.0; },
+    pulse: ()=>{
+      let k=0, steps=24;
+      const id = setInterval(()=>{ active = Math.min(1, active + 0.06); if(++k>=steps) clearInterval(id); }, 16);
+      setTimeout(()=>{
+        let j=0;
+        const id2 = setInterval(()=>{ active = Math.max(0, active - 0.06); if(++j>=steps) clearInterval(id2); }, 16);
+      }, 380);
+    }
   };
-  document.documentElement.dataset.theme = state.theme;
+})();
 
-  let editor, view;
-
-  function log(tag, val){
-    const line = document.createElement("div");
-    line.className = "line";
-    line.innerHTML = `<span class="tag">${tag}</span><span class="val">${typeof val==="string"?val:JSON.stringify(val,null,2)}</span>`;
-    consoleEl.appendChild(line);
-    consoleEl.scrollTop = consoleEl.scrollHeight;
+/* ==========================================================================
+   PARTÍCULAS 2D (adaptado do v11)
+   ========================================================================== */
+(function(){
+  const c = document.getElementById('particles');
+  const ctx = c.getContext('2d');
+  const dpr = Math.min(2, (window.devicePixelRatio||1));
+  function resize(){
+    const r = c.getBoundingClientRect();
+    c.width = Math.floor(r.width*dpr); c.height = Math.floor(r.height*dpr);
   }
+  new ResizeObserver(resize).observe(c); resize();
 
-  function newPage(name="untitled-"+(state.pages.length+1)+".html", content="<!doctype html>\n<html lang=\"pt-br\">\n<head>\n<meta charset=\"utf-8\" />\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n<title>"+name+"</title>\n</head>\n<body>\n<h1>"+name+"</h1>\n<p>Edite aqui…</p>\n</body>\n</html>"){
-    const id = crypto.randomUUID();
-    const page = {id, name, content, ts: Date.now()};
-    state.pages.push(page);
-    savePages();
-    selectPage(id);
+  const N = 90;
+  const nodes = Array.from({length:N}, ()=> ({
+    a: Math.random()*Math.PI*2,
+    r: 0.42 + Math.random()*0.48,
+    s: (0.2+Math.random()*0.7) * (Math.random()<0.5?-1:1),
+    z: 0.5+Math.random()*0.5,
+    hue: 200 + Math.random()*160
+  }));
+
+  function draw(t){
+    ctx.clearRect(0,0,c.width,c.height);
+    ctx.save(); ctx.globalCompositeOperation='lighter'; ctx.translate(c.width/2, c.height/2);
+    const scale = Math.min(c.width, c.height)/2;
+    for(const n of nodes){
+      const ang = n.a + t*0.0002*n.s;
+      const rr = n.r * (0.65 + 0.15*Math.sin(t*0.001 + n.a));
+      const x = Math.cos(ang)*rr*scale;
+      const y = Math.sin(ang)*rr*scale*0.98;
+      const rad = (1.2 + n.z*1.8) * (c.width/800);
+      const g = ctx.createRadialGradient(x,y,0,x,y,rad*4);
+      g.addColorStop(0, `hsla(${n.hue}, 85%, 70%, .85)`);
+      g.addColorStop(1, `hsla(${n.hue}, 85%, 50%, 0)`);
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(x,y,rad,0,Math.PI*2); ctx.fill();
+    }
+    ctx.restore();
+    requestAnimationFrame(draw);
   }
+  requestAnimationFrame(draw);
+})();
 
-  function savePages(){
-    localStorage.setItem("dual.pages", JSON.stringify(state.pages));
-  }
+/* ==========================================================================
+   UI / TRANSIÇÕES / MÓDULOS / MANIFESTO
+   ========================================================================== */
+function renderOrb(){
+  const { orbMode, quanCharge } = S.state;
+  $('orbLabel').textContent = `MODO ${orbMode.toUpperCase()}`;
+  $('orbCharge').textContent = `Carga QUAN: ${quanCharge.toFixed(2)}%`;
+}
+function renderSecundaryPanel(){
+  const { view, estojoItems, lojaItems } = S.state;
+  const title = $('panelTitle');
+  const content = $('panelContent');
+  content.innerHTML = '';
 
-  function selectPage(id){
-    state.current = id;
-    renderTabs();
-    const page = state.pages.find(p=>p.id===id);
-    if(!page) return;
-    loadEditor(page.content);
-    renderPreview();
-  }
-
-  function renderTabs(){
-    tabsEl.innerHTML = "";
-    state.pages.forEach(p=>{
-      const el = document.createElement("div");
-      el.className = "tab"+(p.id===state.current?" sel":"");
-      el.innerHTML = `<span>📄 ${p.name}</span> <button class="btn" data-act="ren" data-id="${p.id}">✎</button> <button class="btn" data-act="del" data-id="${p.id}">✕</button>`;
-      el.onclick = (e)=>{ if(e.target.dataset.act) return; selectPage(p.id); };
-      tabsEl.appendChild(el);
+  if (view === 'estojo'){
+    title.textContent = 'Estojo (Itens)';
+    estojoItems.forEach(item=>{
+      const card = document.createElement('div'); card.className='item-card';
+      card.innerHTML = `<h3 style="margin:0 0 6px 0">${item.name}</h3>
+        <p class="text-sm" style="opacity:.8;margin:0">Quantidade: x${item.count}</p>
+        <p style="font-size:12px;color:var(--ok);margin:.25rem 0 0">Status OK</p>`;
+      content.appendChild(card);
+    });
+  }else if (view === 'loja'){
+    title.textContent = 'Loja (Nexus)';
+    lojaItems.forEach(item=>{
+      const card = document.createElement('div'); card.className='item-card';
+      const owned = !!item.owned;
+      const btn = document.createElement('button');
+      btn.className='buy-btn';
+      btn.textContent = owned ? 'Adquirido' : 'Comprar';
+      btn.disabled = owned;
+      btn.onclick = ()=> buyItem(item.id);
+      card.innerHTML = `<h3 style="margin:0 0 6px 0">${item.name}</h3>
+        <p style="opacity:.8;margin:0">Preço: ${item.price} QUAN</p>`;
+      card.appendChild(btn);
+      content.appendChild(card);
     });
   }
-
-  function loadEditor(text){
-    if(view){ view.destroy(); }
-    const startState = EditorState.create({
-      doc: text,
-      extensions: [
-        keymap.of([...defaultKeymap, ...historyKeymap]),
-        history(),
-        highlightActiveLine(),
-        html(),
-        oneDark,
-        EditorView.updateListener.of((v)=>{
-          if(v.docChanged){
-            const page = state.pages.find(p=>p.id===state.current);
-            page.content = v.state.doc.toString();
-            page.ts = Date.now();
-            rawTa.value = page.content;
-            savePages();
-            schedulePreview();
-          }
-        })
-      ]
-    });
-    view = new EditorView({state:startState, parent: editorParent});
-    rawTa.value = text;
-  }
-
-  let previewTimer;
-  function schedulePreview(){
-    clearTimeout(previewTimer);
-    previewTimer = setTimeout(renderPreview, 400);
-  }
-
-  function stripScripts(html){
-    try{
-      const doc = new DOMParser().parseFromString(html, "text/html");
-      doc.querySelectorAll("script").forEach(s=>s.remove());
-      // also drop inline handlers
-      doc.querySelectorAll("*").forEach(el=>{
-        [...el.attributes].forEach(a=>{ if(/^on/i.test(a.name)) el.removeAttribute(a.name); });
-      });
-      return "<!doctype html>\n"+doc.documentElement.outerHTML;
-    }catch(e){ return html; }
-  }
-
-  function renderPreview(){
-    const page = state.pages.find(p=>p.id===state.current);
-    if(!page) return;
-    const html = state.safe ? stripScripts(page.content) : page.content;
-    const doc = preview.contentWindow.document;
-    doc.open();
-    doc.write(html);
-    doc.close();
-  }
-
-  function analyze(){
-    const page = state.pages.find(p=>p.id===state.current);
-    if(!page) return;
-    const doc = new DOMParser().parseFromString(page.content, "text/html");
-    // IDs
-    const ids = [...doc.querySelectorAll("[id]")].map(el=>el.id).filter(Boolean);
-    $("#countIds").textContent = ids.length;
-    $("#listIds").textContent = [...new Set(ids)].sort().join("\n");
-    // Classes
-    const classes = [];
-    doc.querySelectorAll("[class]").forEach(el=>el.className.split(/\s+/).filter(Boolean).forEach(c=>classes.push(c)));
-    $("#countClasses").textContent = classes.length;
-    $("#listClasses").textContent = [...new Set(classes)].sort().join("\n");
-    // Stylesheets/Styles
-    const styles = [];
-    doc.querySelectorAll("link[rel~='stylesheet']").forEach(l=>styles.append?styles.append:l);
-    const links = [...doc.querySelectorAll("link[rel~='stylesheet']")].map(l=>l.getAttribute("href")||"(inline link)");
-    const styleTags = [...doc.querySelectorAll("style")].map((s,i)=>`<style>[${(s.textContent||'').length} chars] #${i}`);
-    const stylesList = [...links, ...styleTags];
-    $("#countStyles").textContent = stylesList.length;
-    $("#listStyles").textContent = stylesList.join("\n");
-    // Scripts
-    const scr = [...doc.querySelectorAll("script")];
-    const scriptsList = scr.map(s=> s.src ? s.src : `(inline ${ (s.type||'js') } ${ (s.textContent||'').length } chars)`);
-    $("#countScripts").textContent = scriptsList.length;
-    $("#listScripts").textContent = scriptsList.join("\n");
-    // Custom elements (tags com "-")
-    const custom = [...doc.querySelectorAll("*")].map(el=>el.tagName.toLowerCase()).filter(t=>t.includes("-"));
-    $("#countCustom").textContent = custom.length;
-    $("#listCustom").textContent = [...new Set(custom)].sort().join("\n");
-    log("ANALYZE","ok");
-  }
-
-  // UI events
-  $("#btnNew").onclick = ()=> newPage();
-  $("#btnUpload").onclick = ()=> $("#fileInput").click();
-  $("#fileInput").onchange = async (e)=>{
-    const files = [...e.target.files];
-    for(const f of files){
-      const text = await f.readAsText?.() || await f.text();
-      newPage(f.name, text);
-    }
-    e.target.value = "";
-  };
-  $("#btnFetch").onclick = async()=>{
-    const url = prompt("Cole a URL: (suporta GitHub raw)");
-    if(!url) return;
-    let fetchUrl = url.trim();
-    // GitHub shorthand: user/repo/path@branch
-    if(/^[^\/\s]+\/[^\/\s]+\/.+@[^\/\s]+$/.test(fetchUrl)){
-      const [user, repo, rest] = fetchUrl.split("/",3);
-      const [path, branch] = rest.split("@");
-      fetchUrl = `https://raw.githubusercontent.com/${user}/${repo}/${path}?plain=1#${branch}`;
-    }
-    try{
-      const res = await fetch(fetchUrl);
-      const text = await res.text();
-      const name = (url.split("/").pop()||"remote.html").split("?")[0];
-      newPage(name, text);
-      log("FETCH","ok");
-    }catch(e){ log("FETCH","falhou"); alert("Falha ao obter URL."); }
-  };
-  $("#btnSave").onclick = ()=>{
-    savePages(); log("SAVE","ok");
-  };
-  $("#btnExport").onclick = ()=>{
-    const page = state.pages.find(p=>p.id===state.current);
-    if(!page) return;
-    const blob = new Blob([page.content], {type:"text/html"});
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob); a.download = page.name; a.click();
-  };
-  $("#btnZip").onclick = ()=>{
-    // naive zip via JSZip? Para manter single-file, exportamos JSON das páginas (o zip completo requer lib).
-    const blob = new Blob([JSON.stringify(state.pages, null, 2)], {type:"application/json"});
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob); a.download = "dual_pages.json"; a.click();
-  };
-  $("#btnSafe").onclick = ()=>{
-    state.safe = !state.safe;
-    $("#badgeMode").textContent = state.safe ? "Safe Preview: scripts OFF" : "Live Preview: scripts ON";
-    renderPreview();
-  };
-  $("#btnFull").onclick = ()=>{
-    const wrap = $("#previewWrap");
-    if(wrap.requestFullscreen) wrap.requestFullscreen();
-  };
-  $("#btnAnalyze").onclick = analyze;
-  $("#btnPro").onclick = ()=> $("#modal").style.display="flex";
-  $("#btnClose").onclick = ()=> $("#modal").style.display="none";
-  $("#btnClearLS").onclick = ()=>{ localStorage.removeItem("dual.pages"); state.pages=[]; tabsEl.innerHTML=""; log("LS","limpo"); };
-  $("#btnImportPages").onclick = ()=> $("#inputImport").click();
-  $("#inputImport").onchange = async (e)=>{
-    try{
-      const f = e.target.files[0];
-      const text = await f.text();
-      const arr = JSON.parse(text);
-      if(Array.isArray(arr)){
-        state.pages = arr; savePages(); renderTabs();
-        if(state.pages[0]) selectPage(state.pages[0].id);
-        log("IMPORT","ok");
-      }else{ throw new Error("Formato inválido"); }
-    }catch(err){ log("IMPORT","falhou"); alert("Falha ao importar .json"); }
-  };
-  $("#btnExportPages").onclick = ()=>{
-    const blob = new Blob([JSON.stringify(state.pages, null, 2)], {type:"application/json"});
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob); a.download = "dual_pages.json"; a.click();
-  };
-  $("#btnTheme").onclick = ()=>{
-    state.theme = (document.documentElement.dataset.theme === "dark") ? "purple" : "dark";
-    document.documentElement.dataset.theme = state.theme;
-    localStorage.setItem("dual.theme", state.theme);
-  };
-
-  // PWA install
-  let deferredPrompt = null;
-  window.addEventListener('beforeinstallprompt', (e)=>{ e.preventDefault(); deferredPrompt = e; });
-  $("#btnInstall").onclick = async()=>{
-    if(deferredPrompt){ deferredPrompt.prompt(); deferredPrompt = null; }
-    else alert("Se o botão não abrir, use o menu 'Adicionar à Tela de Início' do navegador.");
-  };
-
-  // Initialize
-  if(state.pages.length===0){
-    newPage("exemplo.html");
+}
+function buyItem(id){
+  const item = S.state.lojaItems.find(i=>i.id===id);
+  if (!item) return;
+  if (S.state.quanCharge >= item.price && !item.owned){
+    S.state.quanCharge -= item.price; item.owned = true;
+    renderState(); window.saveState && saveState(S.state);
+    console.log('[LOJA] Compra de', item.name, 'efetuada.');
+  }else if(item.owned){
+    console.warn('[LOJA]', item.name, 'já adquirido.');
   }else{
-    renderTabs(); selectPage(state.pages[0].id);
+    console.error('[LOJA] Carga QUAN insuficiente.');
+  }
+}
+
+function switchMode(targetView){
+  if (S.state.transitioning) return;
+  S.state.transitioning = true;
+
+  const orbWrap = $('orbWrap');
+  const panel = $('panelSecundario');
+
+  let newView = S.state.view;
+  if (targetView === 'toggle'){
+    newView = (S.state.view === 'orb' || S.state.view === 'loja') ? 'estojo' : 'loja';
+  }else{
+    newView = targetView;
   }
 
-  // Register SW
-  if('serviceWorker' in navigator){
-    navigator.serviceWorker.register('./sw.js').catch(()=>{});
+  if (newView !== 'orb'){
+    // saindo do orbe
+    orbWrap.classList.add('is-out');
+    S.state.view = newView;
+    renderSecundaryPanel();
+    setTimeout(()=>{
+      orbWrap.style.display='none';
+      panel.classList.add('open');
+      S.state.transitioning = false;
+      window.saveState && saveState(S.state);
+    }, 600);
+  }else{
+    // voltando
+    panel.classList.remove('open');
+    setTimeout(()=>{
+      orbWrap.style.display='grid';
+      orbWrap.classList.remove('is-out');
+      S.state.view = newView;
+      S.state.transitioning = false;
+      window.saveState && saveState(S.state);
+    }, 600);
   }
+  renderState();
+}
+
+function clickOrb(){
+  // ativa (v11) + ciclo de modos (v13)
+  if (!S.state.activated){
+    S.state.activated = true;
+    $('options').classList.add('active');
+    $('call').textContent = 'Ativado · escolha um módulo';
+  }
+  const modes = ['uno','dual','trinity'];
+  const idx = modes.indexOf(S.state.orbMode);
+  S.state.orbMode = modes[(idx+1)%modes.length];
+  S.state.quanCharge = Math.min(100, S.state.quanCharge + 10);
+  renderOrb();
+  window.__orbGL__ && window.__orbGL__.pulse();
+  window.saveState && saveState(S.state);
+  console.log('[ORBE] Modo =>', S.state.orbMode.toUpperCase());
+}
+
+function renderManifestoContent(){
+  const el = $('manifestoStatus');
+  const unifiedState = {
+    'UID_Manifesto': window.userId || 'N/A',
+    'App_ID_Nexus': window.appId || 'N/A',
+    'Current_View': S.state.view.toUpperCase(),
+    'Orb_Mode': S.state.orbMode.toUpperCase(),
+    'Activated': S.state.activated ? 'SIM' : 'NÃO',
+    'Open_Module': S.state.openModule || '—',
+    'Total_Estojo_Itens': S.state.estojoItems.length,
+    'Config_HTML_Viewer': S.config.modules.htmlViewer ? 'ATIVO (Hub)' : 'INATIVO',
+    'Total_Carga_QUAN': S.state.quanCharge.toFixed(2),
+    'Status_Persistencia': window.db ? 'ONLINE (Firestore)' : 'OFFLINE'
+  };
+
+  let html = `<p class="text-sm" style="opacity:.85;border-bottom:1px solid var(--ring);padding-bottom:10px;margin-top:0">
+    O <strong>Manifesto Central (Nexus)</strong> unifica o estado de todos os módulos (Core, Estojo, Loja, Módulos v11, Persistência).
+  </p>`;
+  html += `<h3 class="text-nebula-t" style="margin:.75rem 0 .35rem;font-weight:800">Estado Chave Unificado (S.state)</h3>`;
+  html += `<pre>${JSON.stringify(unifiedState, null, 2)}</pre>`;
+  html += `<h3 class="text-nebula-m" style="margin:.75rem 0 .35rem;font-weight:800">Módulos Conectados (Nexus Graph)</h3>`;
+  html += `<ul class="text-sm" style="display:grid;gap:8px;list-style:none;padding:0;margin:0">
+    <li style="display:flex;justify-content:space-between;align-items:center;background:var(--glass);padding:10px;border:1px solid var(--ring);border-radius:12px">
+      <span>01. Core (Orbe + Estado)</span><span style="color:var(--ok)">ESTÁVEL</span></li>
+    <li style="display:flex;justify-content:space-between;align-items:center;background:var(--glass);padding:10px;border:1px solid var(--ring);border-radius:12px">
+      <span>02. UI/Transição (Atom_v14)</span><span style="color:var(--ok)">SINCRONIZADO</span></li>
+    <li style="display:flex;justify-content:space-between;align-items:center;background:var(--glass);padding:10px;border:1px solid var(--ring);border-radius:12px">
+      <span>03. WebGL Orb + Partículas</span><span style="color:var(--ok)">ONLINE</span></li>
+    <li style="display:flex;justify-content:space-between;align-items:center;background:var(--glass);padding:10px;border:1px solid var(--ring);border-radius:12px">
+      <span>04. Hub Viewer (Manifestado)</span><span style="color:${S.config.modules.htmlViewer?'var(--ok)':'var(--err)'}">${S.config.modules.htmlViewer?'ONLINE':'OFFLINE'}</span></li>
+  </ul>`;
+  el.innerHTML = html;
+}
+
+function toggleManifesto(open){
+  S.state.manifestoOpen = open;
+  $('manifestoPanel').classList.toggle('open', open);
+  if (open){ renderManifestoContent(); }
+  window.saveState && saveState(S.state);
+}
+
+// MÓDULOS (v11) -------------------------------------------------------------
+function el(tag, attrs, ...children){
+  const n = document.createElement(tag);
+  if (attrs) for (const k in attrs){
+    if (k==='style') n.setAttribute('style', attrs[k]);
+    else if (k==='class') n.className = attrs[k];
+    else if (k.startsWith('on')) n[k] = attrs[k];
+    else n.setAttribute(k, attrs[k]);
+  }
+  children.forEach(c=> n.appendChild(typeof c==='string'? document.createTextNode(c): c));
+  return n;
+}
+function openModule(name){
+  const mods = { fenda: renderFenda, sigilo: renderSigilo, chaves: renderChaves, playlist: renderPlaylist };
+  const fn = mods[name]; if (!fn) return;
+  S.state.openModule = name;
+  $('cardTitle').textContent = name.charAt(0).toUpperCase()+name.slice(1);
+  const root = $('cardContent'); root.innerHTML = ''; fn(root);
+  $('backdrop').classList.add('active'); $('card').classList.add('active');
+  window.saveState && saveState(S.state);
+}
+function closeModule(){
+  $('card').classList.remove('active'); $('backdrop').classList.remove('active');
+  S.state.openModule = null; window.saveState && saveState(S.state);
+}
+
+function renderFenda(root){
+  root.appendChild(el('div', {class:'mod-section'},
+    el('div', {class:'pill'}, icon('cube'), ' Fenda Nebula — abertura de espaços simbólicos'),
+    el('div', {class:'row'}, el('label', null, 'Ritual de abertura'), el('textarea', {rows:4, placeholder:'Descreva a intenção da Fenda…'})),
+    el('div', {class:'row'},
+      el('button', {class:'btn', onclick:()=> window.__orbGL__ && window.__orbGL__.pulse()}, icon('spark'), ' Pulsar Orbe')
+    )
+  ));
+}
+function renderSigilo(root){
+  const sig = `
+╭────────────────────────────╮
+│  ᚠ  ᚢ  ᚦ  ᚨ  ᚱ  ᚲ         │
+│        ✶  Sigilo  ✶        │
+│  ᚷ  ᚹ  ᚺ  ᚾ  ᛁ  ᛃ         │
+╰────────────────────────────╯`;
+  root.appendChild(el('div', {class:'mod-section'},
+    el('div', {class:'pill'}, icon('sigil'), ' Sigilo — inscrição de intenção'),
+    el('pre', {style:'margin:0;font-size:12px;line-height:1.25;'}, sig),
+    el('div', {class:'row'}, el('label', null, 'Mantra / Verbo‑chave'), el('input', {placeholder:'Escreva seu verbo de ativação…'}))
+  ));
+}
+function renderChaves(root){
+  const keyInp = el('input', {type:'password', placeholder:'Cole aqui sua SK (localStorage)'});
+  const status = el('div', {class:'pill'}, icon('lock'), ' Local • seguro');
+  const save = el('button', {class:'btn', onclick:()=>{
+    try{ localStorage.setItem('dual.sk', keyInp.value || ''); status.innerHTML=''; status.appendChild(icon('check')); status.appendChild(document.createTextNode(' Salvo'));
+      setTimeout(()=>{ status.innerHTML=''; status.appendChild(icon('lock')); status.appendChild(document.createTextNode(' Local • seguro')); }, 1400);
+    }catch(e){ alert('Erro ao salvar no localStorage'); }
+  }}, icon('save'), ' Salvar');
+  const clear = el('button', {class:'btn', style:'margin-left:8px;', onclick:()=>{ localStorage.removeItem('dual.sk'); keyInp.value=''; }}, icon('trash'), ' Limpar');
+
+  root.appendChild(el('div', {class:'mod-section'},
+    el('div', {class:'pill'}, icon('keys'), ' Chaves SK — armazenamento local'),
+    el('div', {class:'row'}, el('label', null, 'Chave secreta'), keyInp),
+    el('div', {class:'row'}, status, save, clear)
+  ));
+}
+function renderPlaylist(root){
+  const info = el('div', {class:'pill'}, icon('music'), ' Playlist Nebula — slots de áudio locais');
+  const list = el('div', {class:'row'});
+  for(let i=1;i<=6;i++){
+    list.appendChild(el('div', {class:'mod-section'},
+      el('div', {class:'row'}, el('label', null, 'Faixa '+i), el('input', {placeholder:'Nome da faixa '+i})),
+      el('div', {class:'row'}, el('textarea', {rows:2, placeholder:'Descrição / intenção sonora…'}))
+    ));
+  }
+  root.appendChild(el('div', {class:'mod-section'}, info, list));
+}
+
+/* ==========================================================================
+   RENDER / WIRING
+   ========================================================================== */
+function renderState(){
+  renderOrb();
+  renderSecundaryPanel();
+
+  // Botão de alternância Estojo/Loja/Orb
+  const b = $('btnSwitchMode'); b.innerHTML='';
+  if (S.state.view === 'estojo'){ b.append(icon('cart')); b.append(text(' Loja')); b.onclick = ()=> switchMode('loja'); }
+  else if (S.state.view === 'loja'){ b.append(icon('cube')); b.append(text(' Estojo')); b.onclick = ()=> switchMode('estojo'); }
+  else { b.append(icon('cube')); b.append(text(' Estojo')); b.onclick = ()=> switchMode('estojo'); }
+
+  // Botão Nexus
+  const m = $('btnManifesto'); m.innerHTML=''; m.append(icon('sigil')); m.append(text(' Nexus')); m.onclick = ()=> toggleManifesto(true);
+  $('btnCloseManifesto').innerHTML=''; $('btnCloseManifesto').append(icon('close')); $('btnCloseManifesto').append(text(' Fechar')); $('btnCloseManifesto').onclick = ()=> toggleManifesto(false);
+
+  // Voltar ao Orbe
+  const back = $('btnBackToOrb'); back.innerHTML=''; back.append(icon('close')); back.append(text(' Voltar ao Orbe')); back.onclick = ()=> switchMode('orb');
+
+  // Close do card
+  const cc = $('btnCloseCard'); cc.innerHTML=''; cc.append(icon('close')); cc.append(text(' Fechar')); cc.onclick = closeModule;
+
+  // UID
+  $('userIdDisplay').textContent = `UID: ${window.userId || 'anon-local'}`;
+
+  // Opções ativas?
+  if (S.state.activated) $('options').classList.add('active');
+  $('manifestoPanel').classList.toggle('open', S.state.manifestoOpen);
+  if (S.state.manifestoOpen) renderManifestoContent();
+
+  // Se havia um módulo aberto, reabra após render (pós-sync)
+  if (S.state.openModule){
+    openModule(S.state.openModule);
+  }
+}
+
+// Eventos globais
+$('orbWrap').addEventListener('click', clickOrb, { passive:true });
+document.addEventListener('click', (e)=>{
+  const btn = e.target.closest('.opt');
+  if (btn && btn.dataset.open){ openModule(btn.dataset.open); }
+});
+$('backdrop').addEventListener('click', closeModule);
+document.addEventListener('keydown', (e)=>{ if (e.key === 'Escape'){ if (S.state.manifestoOpen) toggleManifesto(false); if ($('card').classList.contains('active')) closeModule(); } });
+
+// Boot
+window.onload = function(){
+  try{
+    if (window.initFirebase){ initFirebase().then(()=> renderState()); } else { throw new Error('initFirebase indisponível'); }
+  }catch(e){
+    console.warn('Firebase indisponível. Operando LOCAL.', e);
+    window.userId = 'anon-local';
+    renderState();
+  }
+};
 </script>
+</body>
 </html>
