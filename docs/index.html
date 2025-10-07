@@ -184,7 +184,7 @@
     color:var(--muted); font-size:12px; letter-spacing:.3px; opacity:.9; text-align:center; white-space:nowrap; pointer-events:none;
   }
 
-  /* OPTIONS AROUND ORB (v11) */
+  /* OPTIONS AROUND ORB (v11+Hub) */
   .options{ position:absolute; inset:0; pointer-events:none; }
   .opt{
     position:absolute; width:var(--hud-size); height:var(--hud-size);
@@ -199,6 +199,7 @@
   .opt:active{ transform:scale(.98); }
   .opt.fenda    { top:  calc(50% - var(--size-orb)/2 - var(--hud-gap) - var(--hud-size)); left: calc(50% - var(--hud-size) - var(--hud-gap)); }
   .opt.sigilo   { top:  calc(50% - var(--size-orb)/2 - var(--hud-gap) - var(--hud-size)); left: calc(50% + var(--hud-gap)); }
+  .opt.hub      { top:  calc(50% - var(--size-orb)/2 - var(--hud-gap) - var(--hud-size)); left: calc(50% - var(--hud-size)/2); }
   .opt.chaves   { top:  calc(50% + var(--size-orb)/2 + var(--hud-gap)); left: calc(50% - var(--hud-size) - var(--hud-gap)); }
   .opt.playlist { top:  calc(50% + var(--size-orb)/2 + var(--hud-gap)); left: calc(50% + var(--hud-gap)); }
 
@@ -287,8 +288,12 @@
       <button class="opt sigilo" data-open="sigilo" aria-label="Abrir Sigilo">
         <svg viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M5 9h14"/><path d="M7 15h10"/><path d="M6 6l3 3-3 3"/><path d="M18 6l-3 3 3 3"/></svg><div class="lab">Sigilo</div>
       </button>
+      <!-- NOVO: HUB -->
+      <button class="opt hub" data-open="hub" aria-label="Abrir Hub">
+        <svg viewBox="0 0 24 24"><path d="M3 3h6v6H3z"/><path d="M15 3h6v6h-6z"/><path d="M3 15h6v6H3z"/><path d="M15 15h6v6h-6z"/></svg><div class="lab">Hub</div>
+      </button>
       <button class="opt chaves" data-open="chaves" aria-label="Abrir Chaves">
-        <svg viewBox="0 0 24 24"><circle cx="7" cy="7" r="3"/><path d="M9 9l8 8"/><path d="M14 14l3 3l2-2l-3-3"/><path d="M6 10l2 2"/></svg><div class="lab">Chaves</div>
+        <svg viewBox="0 0 24 24"><circle cx="7" cy="7" r="3"/><path d="M9 9l8 8"/><path d="M14 14l3 3l2-2l-3-3"/></svg><div class="lab">Chaves</div>
       </button>
       <button class="opt playlist" data-open="playlist" aria-label="Abrir Playlist">
         <svg viewBox="0 0 24 24"><path d="M4 6h12"/><path d="M4 10h12"/><path d="M4 14h8"/><circle cx="18" cy="16" r="3"/></svg><div class="lab">Playlist</div>
@@ -354,7 +359,7 @@ const S = {
     ],
     // v11
     activated: false,           // habilita opções
-    openModule: null            // 'fenda' | 'sigilo' | 'chaves' | 'playlist' | null
+    openModule: null            // 'fenda' | 'sigilo' | 'hub' | 'chaves' | 'playlist' | null
   },
   config: {
     modules: {
@@ -384,6 +389,7 @@ function icon(name){
   if(name==='trash'){ s.append(P('M4 7h16')); s.append(P('M6 7l1 13h10l1-13')); s.append(P('M9 7V4h6v3')); }
   if(name==='keys'){ s.append(P('M7 5a3 3 0 1 1 0 6a3 3 0 0 1 0-6z')); s.append(P('M9 9l8 8')); s.append(P('M14 14l3 3l2-2l-3-3')); }
   if(name==='music'){ s.append(P('M9 18a3 3 0 1 0 0-6 3 3 0 0 0 0 6z')); s.append(P('M12 6v8')); s.append(P('M12 6l7-2v8')); }
+  if(name==='hub'){ s.append(P('M3 3h6v6H3z')); s.append(P('M15 3h6v6h-6z')); s.append(P('M3 15h6v6H3z')); s.append(P('M15 15h6v6h-6z')); }
   return s;
 }
 
@@ -748,7 +754,7 @@ function toggleManifesto(open){
   window.saveState && saveState(S.state);
 }
 
-// MÓDULOS (v11) -------------------------------------------------------------
+// MÓDULOS (v11 + Hub) -------------------------------------------------------
 function el(tag, attrs, ...children){
   const n = document.createElement(tag);
   if (attrs) for (const k in attrs){
@@ -761,7 +767,7 @@ function el(tag, attrs, ...children){
   return n;
 }
 function openModule(name){
-  const mods = { fenda: renderFenda, sigilo: renderSigilo, chaves: renderChaves, playlist: renderPlaylist };
+  const mods = { fenda: renderFenda, sigilo: renderSigilo, hub: renderHub, chaves: renderChaves, playlist: renderPlaylist };
   const fn = mods[name]; if (!fn) return;
   S.state.openModule = name;
   $('cardTitle').textContent = name.charAt(0).toUpperCase()+name.slice(1);
@@ -796,6 +802,88 @@ function renderSigilo(root){
     el('div', {class:'row'}, el('label', null, 'Mantra / Verbo‑chave'), el('input', {placeholder:'Escreva seu verbo de ativação…'}))
   ));
 }
+
+/* ====================== HUB (NOVO MÓDULO) ====================== */
+function renderHub(root){
+  const viewer = el('iframe', {
+    id:'hubFrame',
+    title:'Hub Viewer',
+    sandbox:'allow-forms allow-scripts',
+    style:'width:100%;height:380px;border:1px solid var(--ring);border-radius:12px;background:#0a0b10'
+  });
+
+  const urlInput = el('input', { type:'url', placeholder:'https://…' });
+  const openBtn  = el('button', { class:'btn' }, icon('spark'), ' Abrir URL');
+  openBtn.onclick = ()=>{
+    const u = urlInput.value.trim();
+    if(!u) return;
+    try{
+      const url = new URL(u);
+      viewer.removeAttribute('srcdoc');
+      viewer.src = url.href;
+      localStorage.setItem('dual.hub.lastUrl', url.href);
+    }catch(e){ alert('URL inválida'); }
+  };
+
+  // Upload local
+  const hiddenFile = el('input', { type:'file', accept:'.html,.htm,.txt', style:'display:none' });
+  const fileBtn = el('button', { class:'btn' }, icon('save'), ' Carregar arquivo');
+  fileBtn.onclick = ()=> hiddenFile.click();
+  hiddenFile.onchange = (e)=>{
+    const f = e.target.files && e.target.files[0];
+    if(!f) return;
+    const r = new FileReader();
+    r.onload = ()=> { viewer.srcdoc = r.result; localStorage.setItem('dual.hub.lastDoc', r.result); };
+    r.readAsText(f);
+  };
+
+  // Cole HTML
+  const ta = el('textarea', { rows:6, placeholder:'Cole HTML aqui (srcdoc)…' });
+  const previewBtn = el('button', { class:'btn' }, icon('spark'), ' Pré‑visualizar');
+  previewBtn.onclick = ()=> { viewer.srcdoc = ta.value; localStorage.setItem('dual.hub.lastDoc', ta.value||''); };
+
+  // Favoritos (URLs)
+  const favsKey='dual.hub.favs';
+  const favList = el('div', { style:'display:flex;flex-direction:column;gap:6px' });
+  function loadFavs(){ try{ return JSON.parse(localStorage.getItem(favsKey)||'[]'); }catch(_){ return []; } }
+  function saveFavs(arr){ localStorage.setItem(favsKey, JSON.stringify(arr.slice(0,12))); }
+  function renderFavs(){
+    favList.innerHTML='';
+    const arr = loadFavs();
+    arr.forEach(href=>{
+      const pill = el('span', { class:'pill', style:'cursor:pointer' }, href.length>28? href.slice(0,24)+'…' : href);
+      pill.title = href;
+      pill.onclick = ()=>{ urlInput.value = href; openBtn.click(); };
+      const del = el('button', { class:'btn', style:'margin-left:6px' }, icon('trash'), ' Remover');
+      del.onclick = ()=>{ saveFavs(loadFavs().filter(x=>x!==href)); renderFavs(); };
+      favList.appendChild(el('div', { style:'display:flex;align-items:center;gap:6px' }, pill, del));
+    });
+  }
+  const addFavBtn = el('button', { class:'btn' }, icon('save'), ' Salvar como favorito');
+  addFavBtn.onclick = ()=>{
+    const href = urlInput.value.trim(); if(!href) return alert('Informe uma URL antes.');
+    const arr = loadFavs(); if (!arr.includes(href)) arr.unshift(href); saveFavs(arr); renderFavs();
+  };
+
+  // Restaurar último estado
+  const lastUrl = localStorage.getItem('dual.hub.lastUrl');
+  const lastDoc = localStorage.getItem('dual.hub.lastDoc');
+  if (lastUrl){ urlInput.value = lastUrl; viewer.src = lastUrl; }
+  else if (lastDoc){ viewer.srcdoc = lastDoc; }
+
+  root.appendChild(el('div', { class:'mod-section' },
+    el('div', { class:'pill' }, icon('hub'), ' Hub — viewer HTML/URL'),
+    el('div', { class:'row' }, el('label', null, 'URL'), urlInput, el('div', null, openBtn)),
+    el('div', { class:'row' }, el('label', null, 'Arquivo local (.html/.txt)'), fileBtn, hiddenFile),
+    el('div', { class:'row' }, el('label', null, 'Ou cole HTML abaixo'), ta, previewBtn),
+    el('div', { class:'row' }, el('label', null, 'Favoritos'), addFavBtn, favList),
+    el('div', { class:'row' }, viewer),
+    el('p', { style:'font-size:12px;opacity:.75;margin:8px 0 0' },
+      'Observação: alguns sites podem bloquear a exibição em iframe (X‑Frame‑Options / CSP). Se ocorrer, use a área de HTML (srcdoc).')
+  ));
+  renderFavs();
+}
+
 function renderChaves(root){
   const keyInp = el('input', {type:'password', placeholder:'Cole aqui sua SK (localStorage)'});
   const status = el('div', {class:'pill'}, icon('lock'), ' Local • seguro');
@@ -880,6 +968,293 @@ window.onload = function(){
     renderState();
   }
 };
+</script>
+
+<!-- Loja Stack Patch (inlined) -->
+<script>
+
+/*! Loja Stack Patch • v1.0
+ *  - Upload de HTMLs na LOJA
+ *  - Abrir em iframe (srcdoc), múltiplas sessões em "stack"
+ *  - Minimizar / Favoritar / Download / Tela Cheia / Fechar
+ *  - Alias de usuário (clique no UID no topo para renomear)
+ *
+ *  Requisitos: página original do Dual Atom v14 (com ids #panelContent e #userIdDisplay)
+ *  Segurança: iframes usam sandbox (sem same-origin) para isolar o HTML carregado.
+ */
+(function(){
+  const KEY_SESSIONS = 'dual.stack.sessions';
+  const KEY_ALIAS    = 'dual.alias';
+
+  // Utilitário para criar elementos sem depender do helper 'el' da página:
+  function h(tag, attrs, ...children){
+    const n = document.createElement(tag);
+    if (attrs) for (const k in attrs){
+      if (k === 'class') n.className = attrs[k];
+      else if (k === 'style') n.setAttribute('style', attrs[k]);
+      else if (k.startsWith('on')) n[k] = attrs[k];
+      else n.setAttribute(k, attrs[k]);
+    }
+    children.forEach(c => n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c));
+    return n;
+  }
+
+  function ensureStyle(){
+    if (document.getElementById('lojaStackStyles')) return;
+    const css = `
+    /* ===== Loja • Stack (scoped) ===== */
+    .ls-sec .row{display:grid;gap:8px}
+    .ls-sec .controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+    .ls-pill{padding:6px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);font-size:12px;color:var(--muted);display:inline-flex;gap:8px;align-items:center}
+    .ls-btn{appearance:none;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.06);color:var(--txt);
+      padding:6px 10px;border-radius:10px;font-size:12px;letter-spacing:.2px;display:inline-flex;align-items:center;gap:8px;cursor:pointer}
+    .ls-btn:hover{background:rgba(255,255,255,.10)}
+    .ls-btn.ghost{background:transparent;border-color:rgba(255,255,255,.14);opacity:.85}
+    .ls-grid{display:grid;gap:12px}
+    .ls-sess{background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+      border:1px solid rgba(255,255,255,.12);border-radius:14px;box-shadow:0 18px 40px rgba(0,0,0,.45);overflow:hidden}
+    .ls-hdr{display:flex;align-items:center;gap:8px;padding:10px;border-bottom:1px solid rgba(255,255,255,.08);background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,0))}
+    .ls-ttl{font-weight:850;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:56vw}
+    .ls-tools{margin-left:auto;display:flex;gap:6px;align-items:center}
+    .ls-iframe{display:block;width:100%;height:60vh;border:0;background:#000}
+    .ls-sess.min .ls-iframe{display:none}
+    .ls-sess.full{position:fixed !important;inset:0;z-index:1000;border-radius:0;margin:0;width:100%;height:100%;display:flex;flex-direction:column}
+    .ls-sess.full .ls-iframe{flex:1 1 auto !important;height:100% !important}
+    body.ls-fullscreen header.hud-bar, body.ls-fullscreen nav, body.ls-fullscreen .panel-secundario .panel-header{display:none !important}
+    .ls-note{font-size:12px;opacity:.72}
+    input[type="file"].ls-file{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.16);padding:8px;border-radius:10px;color:var(--txt)}
+    `;
+    const st = document.createElement('style');
+    st.id = 'lojaStackStyles';
+    st.textContent = css;
+    document.head.appendChild(st);
+  }
+
+  function ensureState(){
+    const S = (window.S = window.S || { state:{}, config:{} });
+    if (!S.state.stackSessions){
+      try{
+        S.state.stackSessions = JSON.parse(localStorage.getItem(KEY_SESSIONS) || '[]');
+      }catch(_){
+        S.state.stackSessions = [];
+      }
+    }
+    if (!S.state.alias){
+      S.state.alias = localStorage.getItem(KEY_ALIAS) || 'anon';
+    }
+    return S;
+  }
+
+  function saveSessions(){
+    const S = ensureState();
+    localStorage.setItem(KEY_SESSIONS, JSON.stringify(S.state.stackSessions));
+    if (typeof window.saveState === 'function') try{ window.saveState(S.state); }catch(_){}
+  }
+
+  function applyAliasUI(){
+    const S = ensureState();
+    const span = document.getElementById('userIdDisplay');
+    if (!span) return;
+    const uid = (window.userId || 'anon-local') + '';
+    const short = uid.slice(0, 6);
+    span.style.cursor = 'pointer';
+    span.title = 'Clique para renomear';
+    span.textContent = `Usuário: ${S.state.alias} · ${short}`;
+    span.onclick = function(){
+      const val = prompt('Seu nome/apelido para mostrar no HUD:', S.state.alias || '');
+      if (val !== null){
+        const alias = (val+'').trim() || 'anon';
+        S.state.alias = alias;
+        localStorage.setItem(KEY_ALIAS, alias);
+        span.textContent = `Usuário: ${alias} · ${short}`;
+        if (typeof window.saveState === 'function') try{ window.saveState(S.state); }catch(_){}
+      }
+    };
+  }
+
+  function icon(name){
+    // Ícones simples via SVG (stroke currentColor)
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns,'svg');
+    svg.setAttribute('viewBox','0 0 24 24');
+    svg.setAttribute('width','18'); svg.setAttribute('height','18');
+    svg.setAttribute('fill','none'); svg.setAttribute('stroke','currentColor'); svg.setAttribute('stroke-width','2');
+    const P = (d)=>{ const p=document.createElementNS(ns,'path'); p.setAttribute('d',d); p.setAttribute('stroke-linecap','round'); p.setAttribute('stroke-linejoin','round'); return p; };
+    if (name==='min')    { svg.append(P('M4 14h16')); }
+    if (name==='max')    { svg.append(P('M4 10h16')); }
+    if (name==='star')   { svg.append(P('M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 22 12 18.77 5.82 22 7 14.14 2 9.27l6.91-1.01L12 2z')); }
+    if (name==='dl')     { svg.append(P('M12 3v12')); svg.append(P('M7 10l5 5 5-5')); svg.append(P('M5 21h14')); }
+    if (name==='close')  { svg.append(P('M18 6L6 18')); svg.append(P('M6 6l12 12')); }
+    if (name==='fs')     { svg.append(P('M4 8V4h4')); svg.append(P('M20 8V4h-4')); svg.append(P('M4 16v4h4')); svg.append(P('M20 16v4h-4')); }
+    if (name==='plus')   { svg.append(P('M12 5v14')); svg.append(P('M5 12h14')); }
+    return svg;
+  }
+
+  function addFilesToStack(fileList){
+    const S = ensureState();
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    let i = 0;
+    function next(){
+      const f = files[i++]; if (!f) { saveSessions(); renderStack(); return; }
+      const reader = new FileReader();
+      reader.onload = function(){
+        const html = reader.result + '';
+        S.state.stackSessions.unshift({
+          id: 'sess_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+          title: f.name || 'untitled.html',
+          type: 'srcdoc',
+          html,
+          minimized: false,
+          fav: false,
+          createdAt: Date.now()
+        });
+        next();
+      };
+      reader.readAsText(f);
+    }
+    next();
+  }
+
+  function downloadHTML(title, html){
+    const blob = new Blob([html], {type:'text/html;charset=utf-8'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = (title || 'page') + (title.endsWith('.html') || title.endsWith('.htm') ? '' : '.html');
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 250);
+  }
+
+  function renderStack(){
+    const wrap = document.getElementById('lojaStackWrap');
+    const count = document.getElementById('lsCount');
+    if (!wrap) return;
+    const S = ensureState();
+    wrap.innerHTML = '';
+    count && (count.textContent = `${S.state.stackSessions.length} sessão(ões)`);
+
+    S.state.stackSessions.forEach(sess => {
+      const card = h('div', {class: 'ls-sess' + (sess.minimized?' min':''), 'data-id': sess.id});
+      const hdr  = h('div', {class:'ls-hdr'});
+      const ttl  = h('div', {class:'ls-ttl', title: sess.title}, sess.title);
+      const tools= h('div', {class:'ls-tools'});
+
+      const bMin = h('button', {class:'ls-btn ghost', title: (sess.minimized?'Restaurar':'Minimizar')}, sess.minimized?icon('max'):icon('min'));
+      const bFav = h('button', {class:'ls-btn ghost', title: (sess.fav?'Desfavoritar':'Favoritar')}, icon('star'));
+      if (sess.fav) bFav.style.color = 'var(--ok)';
+      const bDl  = h('button', {class:'ls-btn ghost', title:'Salvar como arquivo .html'}, icon('dl'));
+      const bFs  = h('button', {class:'ls-btn ghost', title:'Tela cheia'}, icon('fs'));
+      const bCl  = h('button', {class:'ls-btn ghost', title:'Fechar'}, icon('close'));
+
+      bMin.onclick = ()=>{
+        sess.minimized = !sess.minimized;
+        saveSessions();
+        renderStack();
+      };
+      bFav.onclick = ()=>{
+        sess.fav = !sess.fav;
+        saveSessions();
+        renderStack();
+      };
+      bDl.onclick = ()=> downloadHTML(sess.title, sess.html || '');
+      bCl.onclick = ()=>{
+        const idx = S.state.stackSessions.findIndex(x=>x.id===sess.id);
+        if (idx>=0){ S.state.stackSessions.splice(idx,1); saveSessions(); renderStack(); }
+      };
+      bFs.onclick = ()=>{
+        const isFull = card.classList.toggle('full');
+        document.body.classList.toggle('ls-fullscreen', isFull);
+      };
+
+      tools.append(bMin, bFav, bDl, bFs, bCl);
+      hdr.append(ttl, tools);
+
+      const iframe = h('iframe', {class:'ls-iframe', sandbox:'allow-forms allow-scripts'});
+      // Preferimos srcdoc para isolar sem same-origin:
+      if (sess.type==='srcdoc'){
+        iframe.setAttribute('srcdoc', sess.html || '<!doctype html><meta charset="utf-8"><title>vazio</title>');
+      } else if (sess.type==='url'){
+        iframe.removeAttribute('srcdoc');
+        iframe.src = sess.url;
+      }
+
+      card.append(hdr, iframe);
+      wrap.appendChild(card);
+    });
+  }
+
+  function renderLojaSection(){
+    const content = document.getElementById('panelContent');
+    if (!content) return;
+    // Evita duplicar
+    if (document.getElementById('lojaStackSec')) return;
+
+    const sec = h('div', {class:'mod-section ls-sec', id:'lojaStackSec'});
+    const head = h('div', {class:'row'},
+      h('div', {class:'ls-pill'}, 'Apps & Stacks — Loja'),
+      h('div', {class:'ls-pill', id:'lsCount'}, '0 sessão(ões)')
+    );
+
+    const file = h('input', {type:'file', class:'ls-file', accept:'.html,.htm,.txt', multiple:true});
+    const btnAdd = h('button', {class:'ls-btn'}, icon('plus'), document.createTextNode(' Adicionar ao Stack'));
+    btnAdd.onclick = ()=>{
+      if (!file.files || !file.files.length) { alert('Selecione um ou mais arquivos .html/.htm primeiro.'); return; }
+      addFilesToStack(file.files); file.value='';
+    };
+
+    const rowCtl = h('div', {class:'row'},
+      h('div', {class:'controls'}, file, btnAdd),
+      h('div', {class:'ls-note'}, 'Dica: você pode abrir vários HTMLs. Eles ficam isolados (sandbox) e podem ser minimizados, favoritados, salvos e fechados.')
+    );
+
+    const wrap = h('div', {class:'ls-grid', id:'lojaStackWrap'});
+
+    sec.append(head, rowCtl, wrap);
+    // Inserimos no topo do conteúdo da Loja:
+    content.prepend(sec);
+    renderStack();
+  }
+
+  function overrideRender(){
+    const S = ensureState();
+    ensureStyle();
+    applyAliasUI();
+
+    // Se a página ainda não declarou renderSecundaryPanel, tente mais tarde.
+    if (typeof window.renderSecundaryPanel !== 'function'){
+      setTimeout(overrideRender, 180);
+      return;
+    }
+    const original = window.renderSecundaryPanel;
+    if (original.__lsHooked) return; // já patchado
+    window.renderSecundaryPanel = function patchedRender(){
+      const ret = original.apply(this, arguments);
+      try{
+        // Só injeta quando a aba LOJA estiver ativa
+        if (S.state && S.state.view === 'loja'){
+          renderLojaSection();
+        }
+        applyAliasUI();
+      }catch(e){ console.warn('[LojaStack] render hook error:', e); }
+      return ret;
+    };
+    window.renderSecundaryPanel.__lsHooked = true;
+  }
+
+  // Inicialização: aguarda DOM
+  function boot(){
+    ensureStyle(); ensureState(); applyAliasUI(); overrideRender();
+    // Se já estivermos na LOJA no primeiro render, injeta depois do primeiro paint
+    setTimeout(()=>{
+      const S = ensureState();
+      if (S.state && S.state.view === 'loja'){ renderLojaSection(); }
+    }, 300);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+
 </script>
 </body>
 </html>
