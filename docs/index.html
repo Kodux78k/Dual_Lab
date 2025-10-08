@@ -254,6 +254,38 @@
   input, textarea{ width:100%; padding:10px 12px; border-radius:10px; border:1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.05); color:var(--txt); outline:none; }
   .pill{ padding:6px 10px; border-radius:999px; border:1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.06); font-size:12px; color:var(--muted); display:inline-flex; gap:8px; align-items:center; }
 </style>
+
+<style id="dual-orb-style">
+:root{
+  --dualorb-size: var(--size-orb, min(62vw, 420px));
+  --dualorb-z: 55;
+  --dualorb-glowA: rgba(122,60,255,.18);
+  --dualorb-glowB: rgba(0,229,255,.14);
+  --dualorb-ring: rgba(255,255,255,.12);
+  --dualorb-shadow: 0 18px 60px rgba(0,0,0,.55);
+}
+#dualOrbSpot{ position:absolute; inset:0; display:grid; place-items:center; pointer-events:none; }
+.dual-orb{
+  position:relative; width:var(--dualorb-size); height:var(--dualorb-size);
+  display:grid; place-items:center; filter:drop-shadow(var(--dualorb-shadow));
+  will-change:transform,opacity; z-index:var(--dualorb-z); pointer-events:auto;
+}
+.dual-orb__gl, .dual-orb__particles{ position:absolute; inset:0; width:100%; height:100%; border-radius:50%; display:block; }
+.dual-orb__glow{ position:absolute; inset:-10%; border-radius:50%; pointer-events:none;
+  background: radial-gradient(60% 60% at 50% 50%, var(--dualorb-glowA), var(--dualorb-glowB) 45%, transparent 70%);
+  filter: blur(18px); opacity:.9;
+}
+.dual-orb__ring{ position:absolute; inset:-8%; border-radius:50%; pointer-events:none;
+  background: radial-gradient(80% 80% at 50% 50%, var(--dualorb-ring), transparent 42%);
+}
+.dual-orb__label{
+  position:absolute; inset:auto 0 22px 0; text-align:center;
+  font-size: 16px; font-weight:800; letter-spacing:1px; text-transform:uppercase;
+  text-shadow: 0 0 8px rgba(0,0,0,.5); color: var(--txt, #eaf2ff);
+  pointer-events:none;
+}
+</style>
+
 </head>
 <body>
 
@@ -268,11 +300,10 @@
 
   <!-- STAGE -->
   <main class="stage" id="stage">
-    <div id="orbWrap" class="orb-wrap" aria-label="Orbe Nebula">
-      <canvas id="orbGL"></canvas>
-      <div id="orbGlow" class="orb-glow"></div>
-      <canvas id="particles"></canvas>
-      <div class="ring"></div>
+    <div id="orbWrap" class="orb-wrap" aria-label="Orbe Nebula"><div id="dualOrbSpot"></div>
+
+<div id="orbGlow" class="orb-glow"></div>
+<div class="ring"></div>
       <div id="orbLabel" class="orb-label">MODO UNO</div>
       <div id="orbCharge">Carga QUAN: 0%</div>
     </div>
@@ -1256,5 +1287,99 @@ window.onload = function(){
 })();
 
 </script>
+
+<script id="dual-orb-engine">
+(function(global){
+  const DualOrb = {};
+  function fitCanvas(c){ const dpr=Math.min(2,(devicePixelRatio||1)); function rz(){ const r=c.getBoundingClientRect(); c.width=Math.max(1,(r.width*dpr)|0); c.height=Math.max(1,(r.height*dpr)|0);} const ro=new ResizeObserver(rz); ro.observe(c); rz(); return ()=>ro.disconnect(); }
+  function makeOrbGL(canvas){
+    const gl=canvas.getContext('webgl',{antialias:true,alpha:true,premultipliedAlpha:true}); if(!gl) return null;
+    const vs=`attribute vec2 aPos;varying vec2 vUv;void main(){vUv=aPos*0.5+0.5;gl_Position=vec4(aPos,0.,1.);}`;
+    const fs=`precision highp float;varying vec2 vUv;uniform vec2 u_res;uniform float u_time;uniform float u_active;
+    float H(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123);} float N(vec2 p){vec2 i=floor(p),f=fract(p);
+    float a=H(i),b=H(i+vec2(1.,0.)),c=H(i+vec2(0.,1.)),d=H(i+vec2(1.,1.));vec2 u=f*f*(3.-2.*f);return mix(a,b,u.x)+(c-a)*u.y*(1.-u.x)+(d-b)*u.x*u.y;}
+    vec3 cam(){return vec3(0.,0.,3.);} vec3 ray(vec2 uv){uv=uv*2.-1.;uv.x*=u_res.x/u_res.y;return normalize(vec3(uv,-1.8));}
+    bool iSphere(vec3 ro,vec3 rd,float r,out float t){float b=dot(ro,rd),c=dot(ro,ro)-r*r,h=b*b-c;if(h<0.){t=-1.;return false;}h=sqrt(h);t=-b-h;if(t<0.) t=-b+h;return t>=0.;}
+    void main(){
+      vec2 uv=vUv;vec3 ro=cam();vec3 rd=ray(uv);float t;vec3 col=vec3(0.02,0.03,0.07),fogCol=vec3(0.07,0.09,0.16);
+      float g=N(uv*6.+u_time*0.05)*0.25; col+=vec3(0.25,0.08,0.55)*g*0.6+vec3(0.0,0.35,0.55)*g*0.4;
+      if(iSphere(ro,rd,1.,t)){ vec3 p=ro+rd*t,n=normalize(p); float bands=0.5+0.5*sin(6.*p.x+5.*p.y+u_time*0.6); float swirl=N(p.xy*4.+u_time*0.2);
+        vec3 A=vec3(0.52,0.24,1.00),B=vec3(0.00,0.90,1.00); vec3 base=mix(A,B,clamp(bands*0.6+swirl*0.4,0.,1.));
+        vec3 L=normalize(vec3(0.6,0.7,0.5)); float diff=max(dot(n,L),0.); float rim=pow(1.-max(dot(n,-rd),0.),2.);
+        float pulse=0.5+0.5*sin(u_time*1.5); float act=mix(0.6,1.,u_active);
+        vec3 c=base*(0.35+0.75*diff*act)+(B*0.6+A*0.4)*rim*(0.6+0.4*pulse);
+        float fogAmt=1.-exp(-t*0.35); col=mix(c,fogCol,fogAmt*0.25);
+      }else{ vec2 cc=uv-0.5;cc.x*=u_res.x/u_res.y; float d=length(cc); float outer=smoothstep(0.58,0.12,d);
+        vec3 halo=vec3(0.25,0.12,0.55)*outer*0.35+vec3(0.00,0.55,0.95)*outer*0.25; col+=halo; }
+      float vign=smoothstep(1.2,0.55,length((uv-0.5)*vec2(u_res.x/u_res.y,1.))); col*=vign; gl_FragColor=vec4(col,0.98);
+    }`;
+    function SH(t,s){const o=gl.createShader(t);gl.shaderSource(o,s);gl.compileShader(o);if(!gl.getShaderParameter(o,gl.COMPILE_STATUS)){console.error(gl.getShaderInfoLog(o));return null;}return o;}
+    const prog=gl.createProgram(); gl.attachShader(prog,SH(gl.VERTEX_SHADER,vs)); gl.attachShader(prog,SH(gl.FRAGMENT_SHADER,fs)); gl.linkProgram(prog);
+    if(!gl.getProgramParameter(prog,gl.LINK_STATUS)) console.error(gl.getProgramInfoLog(prog)); gl.useProgram(prog);
+    const buf=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,buf); gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,-1,1,1,-1,1]),gl.STATIC_DRAW);
+    const loc=gl.getAttribLocation(prog,'aPos'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
+    const uRes=gl.getUniformLocation(prog,'u_res'); const uTime=gl.getUniformLocation(prog,'u_time'); const uActive=gl.getUniformLocation(prog,'u_active');
+    let active=0,t0=performance.now(),raf=0; function draw(){const t=(performance.now()-t0)*0.001; gl.viewport(0,0,canvas.width,canvas.height);
+      gl.uniform2f(uRes,canvas.width,canvas.height); gl.uniform1f(uTime,t); gl.uniform1f(uActive,active); gl.drawArrays(gl.TRIANGLES,0,6); raf=requestAnimationFrame(draw);} draw();
+    return { setActive(v){active=v?1:0;}, pulse(){let k=0,st=24;const up=setInterval(()=>{active=Math.min(1,active+0.06);if(++k>=st)clearInterval(up);},16);
+      setTimeout(()=>{let j=0;const dn=setInterval(()=>{active=Math.max(0,active-0.06);if(++j>=st)clearInterval(dn);},16);},380); },
+      destroy(){ cancelAnimationFrame(raf); gl.getExtension && gl.getExtension('WEBGL_lose_context')?.loseContext(); } };
+  }
+  function makeParticles(canvas){
+    const ctx=canvas.getContext('2d'); const stopR=fitCanvas(canvas); const N=90;
+    const nodes=Array.from({length:N},()=>({a:Math.random()*6.2831,r:0.42+Math.random()*0.48,s:(0.2+Math.random()*0.7)*(Math.random()<.5?-1:1),z:0.5+Math.random()*0.5,hue:200+Math.random()*160}));
+    let raf=0,t0=performance.now(); function draw(){const t=performance.now()-t0; ctx.clearRect(0,0,canvas.width,canvas.height);
+      ctx.save(); ctx.globalCompositeOperation='lighter'; ctx.translate(canvas.width/2,canvas.height/2); const scale=Math.min(canvas.width,canvas.height)/2;
+      for(const n of nodes){ const ang=n.a+t*0.0002*n.s; const rr=n.r*(0.65+0.15*Math.sin(t*0.001+n.a)); const x=Math.cos(ang)*rr*scale; const y=Math.sin(ang)*rr*scale*0.98;
+        const rad=(1.2+n.z*1.8)*(canvas.width/800); const g=ctx.createRadialGradient(x,y,0,x,y,rad*4);
+        g.addColorStop(0,`hsla(${n.hue},85%,70%,.85)`); g.addColorStop(1,`hsla(${n.hue},85%,50%,0)`); ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,rad,0,6.2831); ctx.fill(); }
+      ctx.restore(); raf=requestAnimationFrame(draw); } raf=requestAnimationFrame(draw); return { destroy(){ cancelAnimationFrame(raf); stopR(); } };
+  }
+  DualOrb.mount=function(target,opts={}){
+    const cfg={ label:opts.label??'MODO UNO', particles:opts.particles!==false, zIndex:Number.isFinite(opts.zIndex)?opts.zIndex:undefined };
+    const wrap=document.createElement('div'); wrap.className='dual-orb'; if(cfg.zIndex!==undefined) wrap.style.zIndex=cfg.zIndex;
+    const glc=document.createElement('canvas'); glc.className='dual-orb__gl';
+    const glow=document.createElement('div'); glow.className='dual-orb__glow';
+    const ring=document.createElement('div'); ring.className='dual-orb__ring';
+    const plc=document.createElement('canvas'); plc.className='dual-orb__particles';
+    const lab=document.createElement('div'); lab.className='dual-orb__label'; lab.textContent=cfg.label;
+    wrap.appendChild(glc); wrap.appendChild(glow); if(cfg.particles) wrap.appendChild(plc); wrap.appendChild(ring); wrap.appendChild(lab);
+    target.appendChild(wrap);
+    const stopGLResize=fitCanvas(glc); const glAPI=makeOrbGL(glc); const pAPI=cfg.particles?makeParticles(plc):null;
+    wrap.addEventListener('click',()=>glAPI?.pulse(),{passive:true});
+    return { el:wrap, setActive:(v)=>glAPI?.setActive(!!v), pulse:()=>glAPI?.pulse(), setLabel:(t)=> (lab.textContent=t||''), destroy(){ glAPI?.destroy(); pAPI?.destroy?.(); stopGLResize(); wrap.remove(); } };
+  };
+  global.DualOrb=DualOrb;
+})(window);
+</script>
+
+<script id="dual-orb-boot">
+(function(){
+  const $ = (id)=> document.getElementById(id);
+  let ORB=null;
+  function mountOrb(){
+    try{ ORB?.destroy(); }catch(_){}
+    const spot = $('dualOrbSpot'); if(!spot) return;
+    const enabled = JSON.parse(localStorage.getItem('orb.particles.enabled') ?? 'true');
+    ORB = window.DualOrb.mount(spot, { label: ($('orbLabel')?.textContent || 'MODO UNO'), particles: enabled, zIndex:55 });
+    window.__orbGL__ = { setActive:(v)=>{try{ORB?.setActive(!!v);}catch(_){}}, pulse:()=>{try{ORB?.pulse();}catch(_){}} };
+    setTimeout(()=>{ try{ ORB.setActive(true); ORB.pulse(); }catch(_){ } }, 140);
+  }
+  function ensureSpot(){
+    const wrap = $('orbWrap'); if(!wrap) return;
+    if (!$('dualOrbSpot')){
+      const spot = document.createElement('div'); spot.id='dualOrbSpot';
+      const ring = wrap.querySelector('.ring'); if (ring) wrap.insertBefore(spot, ring); else wrap.appendChild(spot);
+    }
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ()=>{ ensureSpot(); mountOrb(); });
+  else { ensureSpot(); mountOrb(); }
+  document.addEventListener('click', (e)=>{
+    const back = e.target.closest && e.target.closest('#btnBackToOrb');
+    if (back){ setTimeout(()=>{ try{ window.__orbGL__?.pulse(); }catch(_){ } }, 220); }
+  });
+})();
+</script>
+
 </body>
 </html>
