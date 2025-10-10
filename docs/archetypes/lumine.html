@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Lumine · Tri-Ring Atom (Faces Centradas + 3D opcional)</title>
+<style>
+  :root {
+    --color: #e5e7eb;
+    --r1: min(38vmin, 260px);
+    --r2: min(29vmin, 200px);
+    --r3: min(20vmin, 140px);
+    --n1: 12; --n2: 10; --n3: 8;
+    --speed1: 42s; --speed2: 30s; --speed3: 20s;
+    --font1: clamp(12px, 3.0vmin, 24px);
+    --font2: clamp(11px, 2.6vmin, 20px);
+    --font3: clamp(10px, 2.2vmin, 18px);
+    --faceSize: clamp(28px, 10vmin, 72px);
+    --labelSize: clamp(12px, 2.6vmin, 16px);
+    --bg: transparent;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; width:100%; height:100%; background: var(--bg); }
+  body {
+    display:grid; place-items:center;
+    color: var(--color);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    user-select:none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  .stage { position:relative; width:min(86vmin, 580px); height:min(86vmin, 580px); }
+
+  .halo {
+    position:absolute; left:50%; top:50%;
+    transform: translate(-50%,-50%);
+    width: 78%; height: 78%;
+    border: 1px solid color-mix(in oklab, var(--color) 35%, transparent);
+    border-radius: 50%;
+    opacity: .2;
+    z-index: 1;
+  }
+
+  .ring { position:absolute; inset:0; transform-origin: 50% 50%; z-index:2; }
+  .r1 { animation: rotCW var(--speed1) linear infinite; }
+  .r2 { animation: rotCCW var(--speed2) linear infinite; }
+  .r3 { animation: rotCW var(--speed3) linear infinite; }
+  @keyframes rotCW  { from{transform:rotate(0)} to{transform:rotate(360deg)} }
+  @keyframes rotCCW { from{transform:rotate(0)} to{transform:rotate(-360deg)} }
+
+  .g1, .g2, .g3 {
+    position:absolute; left:50%; top:50%;
+    line-height:1; opacity:.92;
+    text-shadow: 0 0 0.25em color-mix(in oklab, var(--color) 70%, transparent);
+  }
+  .g1 { font-size: var(--font1); transform: rotate(var(--a)) translate(var(--r1)) rotate(calc(-1*var(--a))); animation: b1 3.2s ease-in-out infinite alternate; animation-delay: var(--d);}
+  .g2 { font-size: var(--font2); transform: rotate(var(--a)) translate(var(--r2)) rotate(calc(-1*var(--a))); animation: b2 2.6s ease-in-out infinite alternate; animation-delay: var(--d);}
+  .g3 { font-size: var(--font3); transform: rotate(var(--a)) translate(var(--r3)) rotate(calc(-1*var(--a))); animation: b3 2.2s ease-in-out infinite alternate; animation-delay: var(--d);}
+  @keyframes b1 { from{opacity:.6;} to{opacity:.98;} }
+  @keyframes b2 { from{opacity:.55;} to{opacity:.96;} }
+  @keyframes b3 { from{opacity:.50;} to{opacity:.94;} }
+
+  /* Bloco central absolutamente centralizado (face + label) */
+  .center {
+    position:absolute; inset:0;
+    display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+    gap: 1.2vmin;
+    z-index:3;
+    pointer-events:none;
+    text-align:center;
+  }
+  .face {
+    display:inline-flex; align-items:center; justify-content:center;
+    font-size: var(--faceSize); line-height:1;
+    transform: translateZ(0);
+    filter: drop-shadow(0 0 0.25rem color-mix(in oklab, var(--color) 65%, transparent));
+    font-variant-ligatures: none;
+    letter-spacing: 0.02em;
+  }
+  /* Agora o conteúdo troca via JS setando --cur */
+  .face::after { content: var(--cur, '✦'); }
+  .face-pulse { animation: fp 2.8s ease-in-out infinite; }
+  @keyframes fp { 0%,100%{transform:scale(1);opacity:.96} 50%{transform:scale(1.06) rotate(1.5deg);opacity:.86} }
+
+  .label { font-size: var(--labelSize); letter-spacing:.12em; text-transform:uppercase; opacity:.82; }
+
+  .safe .r1 { animation-duration: 120s; }
+  .safe .r2 { animation-duration: 100s; }
+  .safe .r3 { animation-duration: 90s; }
+  .safe .g1, .safe .g2, .safe .g3 { animation: none; opacity:.9; }
+  @media (prefers-reduced-motion: reduce) {
+    .r1 { animation-duration: 140s; }
+    .r2 { animation-duration: 120s; }
+    .r3 { animation-duration: 100s; }
+    .g1, .g2, .g3 { animation: none; }
+  }
+
+  #gl-overlay { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:0; }
+</style>
+<script>
+  (function() {
+    try {
+      var q = new URLSearchParams(location.search);
+      if (q.get('safe') === '1' || q.get('safe') === 'true') {
+        document.documentElement.classList.add('safe');
+      }
+    } catch(e) { }
+    window.addEventListener('load', function() {
+      if (window.parent) {
+        try { window.parent.postMessage({ type:'ATIVAR_ARQUETIPO', id:'lumine' }, '*'); } catch(_e){}
+      }
+    });
+  })();
+</script>
+</head>
+<body>
+  <div class="stage" role="img" aria-label="Animação ritual com três anéis ASCII e faces centrais animadas do arquétipo Lumine">
+    <canvas id="gl-overlay"></canvas>
+    <div class="halo" aria-hidden="true"></div>
+    <div class="ring r1"><span class="g1" style="--a:calc(0 * (360deg / 12));--d:0.00s">=</span>
+      <span class="g1" style="--a:calc(1 * (360deg / 12));--d:0.12s">|</span>
+      <span class="g1" style="--a:calc(2 * (360deg / 12));--d:0.24s">-</span>
+      <span class="g1" style="--a:calc(3 * (360deg / 12));--d:0.36s">+</span>
+      <span class="g1" style="--a:calc(4 * (360deg / 12));--d:0.48s">=</span>
+      <span class="g1" style="--a:calc(5 * (360deg / 12));--d:0.60s">|</span>
+      <span class="g1" style="--a:calc(6 * (360deg / 12));--d:0.72s">-</span>
+      <span class="g1" style="--a:calc(7 * (360deg / 12));--d:0.84s">+</span>
+      <span class="g1" style="--a:calc(8 * (360deg / 12));--d:0.96s">=</span>
+      <span class="g1" style="--a:calc(9 * (360deg / 12));--d:1.08s">|</span>
+      <span class="g1" style="--a:calc(10 * (360deg / 12));--d:1.20s">-</span>
+      <span class="g1" style="--a:calc(11 * (360deg / 12));--d:1.32s">+</span></div>
+    <div class="ring r2"><span class="g2" style="--a:calc(0 * (360deg / 10));--d:0.00s">|</span>
+      <span class="g2" style="--a:calc(1 * (360deg / 10));--d:0.12s">¦</span>
+      <span class="g2" style="--a:calc(2 * (360deg / 10));--d:0.24s">=</span>
+      <span class="g2" style="--a:calc(3 * (360deg / 10));--d:0.36s">-</span>
+      <span class="g2" style="--a:calc(4 * (360deg / 10));--d:0.48s">|</span>
+      <span class="g2" style="--a:calc(5 * (360deg / 10));--d:0.60s">¦</span>
+      <span class="g2" style="--a:calc(6 * (360deg / 10));--d:0.72s">=</span>
+      <span class="g2" style="--a:calc(7 * (360deg / 10));--d:0.84s">-</span>
+      <span class="g2" style="--a:calc(8 * (360deg / 10));--d:0.96s">|</span>
+      <span class="g2" style="--a:calc(9 * (360deg / 10));--d:1.08s">¦</span></div>
+    <div class="ring r3"><span class="g3" style="--a:calc(0 * (360deg / 8));--d:0.00s">=</span>
+      <span class="g3" style="--a:calc(1 * (360deg / 8));--d:0.12s">-</span>
+      <span class="g3" style="--a:calc(2 * (360deg / 8));--d:0.24s">=</span>
+      <span class="g3" style="--a:calc(3 * (360deg / 8));--d:0.36s">-</span>
+      <span class="g3" style="--a:calc(4 * (360deg / 8));--d:0.48s">=</span>
+      <span class="g3" style="--a:calc(5 * (360deg / 8));--d:0.60s">-</span>
+      <span class="g3" style="--a:calc(6 * (360deg / 8));--d:0.72s">=</span>
+      <span class="g3" style="--a:calc(7 * (360deg / 8));--d:0.84s">-</span></div>
+    <div class="center">
+      <div class="face face-pulse"></div>
+      <div class="label">[ Lumine ]</div>
+    </div>
+  </div>
+
+<script>
+(function(){ 
+  // Frames dinâmicos no centro (3–8 frames), trocados via JS (leve)
+  try {
+    var q = new URLSearchParams(location.search);
+    var SAFE = (q.get('safe')==='1' || q.get('safe')==='true' || (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches));
+    var face = document.querySelector('.face');
+    var frames = ['<>', '< >', '[]', '| |', '<>']; // Python injeta lista -> JS array literal
+    var idx = 0;
+    function tick(){
+      face.style.setProperty('--cur', `'` + frames[idx] + `'`);
+      idx = (idx + 1) % frames.length;
+    }
+    tick();
+    var base = 520; // ms por frame
+    var iv = setInterval(tick, SAFE ? base*2 : base);
+
+    // Overlay 3D (CDN) — opcional
+    if (!SAFE) {
+      function loadScript(src) {
+        return new Promise(function(res, rej){
+          var s = document.createElement('script');
+          s.src = src; s.async = true;
+          s.onload = function(){ res(); };
+          s.onerror = function(){ rej(new Error('CDN load failed')); };
+          document.head.appendChild(s);
+        });
+      }
+      var CDN = 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js';
+      loadScript(CDN).then(function(){
+        if (!window.THREE) return;
+        var THREE = window.THREE;
+        var canvas = document.getElementById('gl-overlay');
+        var renderer = new THREE.WebGLRenderer({ canvas: canvas, alpha: true, antialias: true });
+        var dpr = Math.max(1, window.devicePixelRatio || 1); renderer.setPixelRatio(dpr);
+        var scene = new THREE.Scene();
+        var camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100); camera.position.z = 6;
+
+        function resize() {
+          var stage = document.querySelector('.stage');
+          var w = stage.clientWidth || window.innerWidth;
+          var h = stage.clientHeight || window.innerHeight;
+          renderer.setSize(w, h, false);
+          camera.aspect = w / h; camera.updateProjectionMatrix();
+          setupRT(w, h);
+        }
+        window.addEventListener('resize', resize);
+
+        var N1=12, N2=10, N3=8, total=N1+N2+N3;
+        var positions=new Float32Array(total*3), sizes=new Float32Array(total), colors=new Float32Array(total*3);
+        var angles=new Float32Array(total), speeds=new Float32Array(total), radii=new Float32Array(total);
+        function fillColor(i, r,g,b){ colors[i*3]=r; colors[i*3+1]=g; colors[i*3+2]=b; }
+        var rr=0.898039, gg=0.905882, bb=0.921569; var idxp=0;
+        function ring(count, R, base){
+          for (var i=0;i<count;i++){ var t=i/count; angles[idxp]=t*Math.PI*2; speeds[idxp]=base*(0.9+Math.random()*0.2); radii[idxp]=R; sizes[idxp]=6.0+Math.random()*3.0; fillColor(idxp, rr,gg,bb); idxp++; }
+        }
+        var elemEll = {"water":0.9,"wood":0.75,"fire":0.65,"earth":0.5,"metal":0.6}['metal'];
+        var elemSpeed = {"water":0.8,"wood":1.0,"fire":1.4,"earth":0.6,"metal":1.1}['metal'];
+        ring(N1, 2.1, 0.005*elemSpeed);
+        ring(N2, 1.6, -0.007*elemSpeed);
+        ring(N3, 1.15, 0.010*elemSpeed);
+
+        var geom=new THREE.BufferGeometry();
+        geom.setAttribute('position', new THREE.BufferAttribute(positions,3));
+        geom.setAttribute('size', new THREE.BufferAttribute(sizes,1));
+        geom.setAttribute('color', new THREE.BufferAttribute(colors,3));
+        var vs=`
+          attribute float size;
+          attribute vec3 color;
+          varying vec3 vColor;
+          void main(){
+            vColor=color;
+            vec4 mv=modelViewMatrix*vec4(position,1.0);
+            gl_PointSize=size*(300.0/-mv.z);
+            gl_Position=projectionMatrix*mv;
+          }
+        `;
+        var fs=`
+          varying vec3 vColor;
+          void main(){
+            vec2 uv=gl_PointCoord-vec2(0.5);
+            float d=length(uv);
+            float alpha=smoothstep(0.5,0.0,d);
+            gl_FragColor=vec4(vColor,alpha);
+          }
+        `;
+        var mat=new THREE.ShaderMaterial({vertexShader:vs,fragmentShader:fs,blending:THREE.AdditiveBlending,transparent:true,depthWrite:false});
+        var points=new THREE.Points(geom,mat); scene.add(points);
+
+        // Orbit lines
+        function makeEllipse(rx,ry,segs){
+          var g=new THREE.BufferGeometry(); var arr=new Float32Array(segs*3);
+          for (var i=0;i<segs;i++){ var a=i/segs*Math.PI*2; arr[i*3]=Math.cos(a)*rx; arr[i*3+1]=Math.sin(a)*ry; arr[i*3+2]=0.0; }
+          g.setAttribute('position', new THREE.BufferAttribute(arr,3)); return g;
+        }
+        var lineColor=new THREE.Color(rr,gg,bb); var mLine=new THREE.LineBasicMaterial({color:lineColor,transparent:true,opacity:0.18});
+        scene.add(new THREE.LineLoop(makeEllipse(2.1,2.1*elemEll,128), mLine));
+        scene.add(new THREE.LineLoop(makeEllipse(1.6,1.6*elemEll,96), mLine));
+        scene.add(new THREE.LineLoop(makeEllipse(1.15,1.15*elemEll,72), mLine));
+
+        // Mini-bloom (H+V blur) at half res
+        var rtA, rtB, quadCam;
+        function setupRT(w,h){
+          var W=Math.max(2,Math.floor(w*0.6)), H=Math.max(2,Math.floor(h*0.6));
+          var opts={minFilter:THREE.LinearFilter,magFilter:THREE.LinearFilter,format:THREE.RGBAFormat,depthBuffer:false};
+          if(rtA) rtA.dispose(); if(rtB) rtB.dispose(); rtA=new THREE.WebGLRenderTarget(W,H,opts); rtB=new THREE.WebGLRenderTarget(W,H,opts);
+          quadCam=new THREE.OrthographicCamera(-1,1,1,-1,0,1);
+        }
+        var quadGeo=new THREE.PlaneGeometry(2,2);
+        var blurVS=`
+          varying vec2 vUv;
+          void main(){
+            vUv=uv;
+            gl_Position=vec4(position.xy,0.0,1.0);
+          }
+        `;
+        var blurFS=`
+          uniform sampler2D tDiffuse; uniform vec2 uDir; varying vec2 vUv;
+          void main(){
+            float w0=0.227027; float w1=0.1945946; float w2=0.1216216; float w3=0.054054; float w4=0.016216;
+            vec4 sum = texture2D(tDiffuse, vUv) * w0;
+            sum += texture2D(tDiffuse, vUv + 1.0*uDir) * w1;
+            sum += texture2D(tDiffuse, vUv - 1.0*uDir) * w1;
+            sum += texture2D(tDiffuse, vUv + 2.0*uDir) * w2;
+            sum += texture2D(tDiffuse, vUv - 2.0*uDir) * w2;
+            sum += texture2D(tDiffuse, vUv + 3.0*uDir) * w3;
+            sum += texture2D(tDiffuse, vUv - 3.0*uDir) * w3;
+            sum += texture2D(tDiffuse, vUv + 4.0*uDir) * w4;
+            sum += texture2D(tDiffuse, vUv - 4.0*uDir) * w4;
+            gl_FragColor = sum;
+          }
+        `;
+        var blurMat=new THREE.ShaderMaterial({vertexShader:blurVS,fragmentShader:blurFS,uniforms:{tDiffuse:{value:null},uDir:{value:new THREE.Vector2(1,0)}},transparent:true});
+        var blurMatV=blurMat.clone();
+        var quadH=new THREE.Mesh(quadGeo, blurMat);
+        var quadV=new THREE.Mesh(quadGeo, blurMatV);
+        var sceneH=new THREE.Scene(); sceneH.add(quadH);
+        var sceneV=new THREE.Scene(); sceneV.add(quadV);
+
+        var presentFS=`
+          uniform sampler2D tDiffuse; varying vec2 vUv;
+          void main(){
+            vec4 c = texture2D(tDiffuse, vUv);
+            gl_FragColor = vec4(c.rgb, 0.9);
+          }
+        `;
+        var presentMat=new THREE.ShaderMaterial({vertexShader:blurVS,fragmentShader:presentFS,uniforms:{tDiffuse:{value:null}},transparent:true,blending:THREE.AdditiveBlending,depthWrite:false});
+        var quadP=new THREE.Mesh(quadGeo, presentMat);
+        var scenePresent=new THREE.Scene(); scenePresent.add(quadP);
+
+        function updatePositions(t){
+          var k=0;
+          for (var i=0;i<total;i++){ angles[i]+=speeds[i]; var a=angles[i], R=radii[i]; positions[k++]=Math.cos(a)*R; positions[k++]=Math.sin(a)*R*elemEll; positions[k++]=0.0; sizes[i]+=(Math.sin(t*2.0+i)*0.05); }
+          geom.attributes.position.needsUpdate=true; geom.attributes.size.needsUpdate=true;
+        }
+
+        function render(){
+          // scene → rtA
+          renderer.setRenderTarget(rtA); renderer.clear(); renderer.render(scene,camera);
+          // blur H → rtB
+          blurMat.uniforms.tDiffuse.value=rtA.texture; blurMat.uniforms.uDir.value.set(1.0/rtA.width,0.0);
+          renderer.setRenderTarget(rtB); renderer.render(sceneH,quadCam);
+          // blur V → rtA
+          blurMatV.uniforms.tDiffuse.value=rtB.texture; blurMatV.uniforms.uDir.value.set(0.0,1.0/rtB.height);
+          renderer.setRenderTarget(rtA); renderer.render(sceneV,quadCam);
+          // present
+          renderer.setRenderTarget(null); renderer.clearDepth(); renderer.render(scene,camera);
+          presentMat.uniforms.tDiffuse.value=rtA.texture; renderer.render(scenePresent,quadCam);
+        }
+
+        function animate(){
+          var t=performance.now()*0.001; updatePositions(t); render(); requestAnimationFrame(animate);
+        }
+
+        resize(); animate();
+      }).catch(function(){ });
+    }
+  } catch(e){ }
+})();
+</script>
+</body>
+</html>
