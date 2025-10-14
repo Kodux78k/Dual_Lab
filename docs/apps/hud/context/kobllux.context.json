@@ -1,0 +1,99 @@
+{
+  "id": "kobllux.infodose.core",
+  "version": "2.5.1b",
+  "project": "HUB UNO — KOBLLUX Glow",
+  "bus": { "channel": "kobllux::bus", "topics": ["run", "dose", "status"] },
+  "policies": { "once": true, "cache": "indexeddb", "csp": "default-src 'self'" },
+
+  "i18n": {
+    "pt": {
+      "empresa": "Ativar Empresa Infodose",
+      "estado": "Ativar Estado 78K",
+      "dose_fitness": "Dose Fitness",
+      "dose_criativa": "Dose Criativa",
+      "dose_empresarial": "Dose Empresarial",
+      "denied": "Ação restrita: apenas KODUX pode executar este comando."
+    },
+    "en": {
+      "empresa": "Activate Infodose Company",
+      "estado": "Activate State 78K",
+      "dose_fitness": "Fitness Dose",
+      "dose_criativa": "Creative Dose",
+      "dose_empresarial": "Business Dose",
+      "denied": "Restricted action: only KODUX can run this command."
+    },
+    "default": "pt"
+  },
+
+  "modules": {
+    "empresa": {
+      "id": "ativar-empresa",
+      "entry": "Ativar Empresa Infodose",
+      "doc_ref": "Ativar_Empresa_Infodose_Comando_Treinamento v2.4.5.docx"
+    },
+    "estado78k": {
+      "id": "estado-78k",
+      "entry": "Ativar Estado 78K: Sincronizar Chave Mestra, integrar Modo Meta-Humano-Máquina-Aprendizado. Ativar os 12 arquétipos, assistentes específicos, equipes de suporte, planejadores e programadores. Infodose operacional com máxima eficiência e automação estratégica. Coordenação total gerenciada por KODUX. Status: Pronto para execução.",
+      "doc_ref": "Treinamento_Ativacao_Estado_78K.docx"
+    },
+    "doses-bonificacoes": {
+      "id": "doses-bonus",
+      "entry": "Motor de Doses + Bonificações",
+      "doc_ref": "Treinamento_Ativacao_Doses_Integradas_Bonificacoes v2.5.1.docx"
+    },
+    "doses-playbook": {
+      "id": "doses-playbook",
+      "entry": "Playbook Doses",
+      "doc_ref": "Treinamento_Completo_Ativacoes_Doses v2.5.1.docx"
+    }
+  },
+
+  "commands": {
+    "empresa.activate": {
+      "module": "ativar-empresa",
+      "gate": "KODUX_ONLY",
+      "ui": { "group": "core", "label_i18n": {"pt":"empresa","en":"empresa"} },
+      "dispatch": { "topic": "run", "payload": {"module":"ativar-empresa","entry":"Ativar Empresa Infodose"} }
+    },
+    "estado.activate": {
+      "module": "estado-78k",
+      "ui": { "group": "core", "label_i18n": {"pt":"estado","en":"estado"} },
+      "dispatch": { "topic": "run", "payload": {"module":"estado-78k","entry":"Ativar Estado 78K"} }
+    },
+    "dose.fitness": {
+      "module": "doses-playbook",
+      "ui": { "group": "doses", "label_i18n": {"pt":"dose_fitness","en":"dose_fitness"} },
+      "dispatch": { "topic": "dose", "payload": {"module":"doses-playbook","flow":"fitness","entry":"Dose Fitness"} }
+    },
+    "dose.criativa": {
+      "module": "doses-playbook",
+      "ui": { "group": "doses", "label_i18n": {"pt":"dose_criativa","en":"dose_criativa"} },
+      "dispatch": { "topic": "dose", "payload": {"module":"doses-playbook","flow":"criativa","entry":"Dose Criativa"} }
+    },
+    "dose.empresarial": {
+      "module": "doses-playbook",
+      "ui": { "group": "doses", "label_i18n": {"pt":"dose_empresarial","en":"dose_empresarial"} },
+      "dispatch": { "topic": "dose", "payload": {"module":"doses-playbook","flow":"empresarial","entry":"Dose Empresarial"} }
+    }
+  },
+
+  "gates": {
+    "KODUX_ONLY": {
+      "type": "predicate",
+      "predicate": {
+        "any": [
+          { "ls_equals": ["infodose:userName", "KODUX"] },
+          { "ls_equals": ["dual.name", "KODUX"] },
+          { "ls_equals": ["infodose:userRole", "KODUX"] }
+        ]
+      }
+    }
+  },
+
+  "ui": {
+    "hook": {
+      "button_unico_selector": "#btnKOBLLUX",
+      "menu_style": "glow"
+    }
+  }
+}
