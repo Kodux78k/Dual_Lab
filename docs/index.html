@@ -5993,4 +5993,108 @@ document.getElementById('orbWrap')?.addEventListener('click', function(){ try{ w
 })();
 
 </script>
+  <style id="kobllux-menu-css">
+.kobllux-menu{position:fixed;z-index:1600;min-width:220px;background:rgba(15,17,32,.94);border:1px solid rgba(255,255,255,.12);border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.5),0 0 0 1px rgba(57,255,182,.16) inset;backdrop-filter:blur(10px);padding:6px;animation:kobIn .18s ease both}
+.kobllux-menu .itm{display:flex;gap:10px;align-items:center;padding:10px;border-radius:10px;cursor:pointer;font-weight:800}
+.kobllux-menu .itm:hover{background:linear-gradient(90deg,rgba(57,255,182,.12),rgba(0,194,255,.10));box-shadow:0 0 0 1px rgba(255,255,255,.10) inset}
+.kobllux-menu .ico{width:18px;height:18px;filter:invert(1) brightness(1.2)}
+.kobllux-sep{height:1px;margin:6px 4px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.18),transparent)}
+.kobllux-badge{display:inline-flex;gap:6px;align-items:center;font-size:11px;color:#9ed9ff;padding:4px 8px;border:1px solid rgba(158,217,255,.25);border-radius:999px;margin:6px}
+@keyframes kobIn{from{opacity:0;transform:translateY(6px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+</style>
+
+<script id="kobllux-menu-js">
+(async function(){
+  const BUS = new BroadcastChannel('kobllux::bus');
+  const T = (ctx)=>{ const lang=(localStorage.getItem('kobllux.lang')||ctx?.i18n?.default||'pt'); return (k)=> ctx?.i18n?.[lang]?.[k]||ctx?.i18n?.pt?.[k]||k; };
+  const LS = (k)=>localStorage.getItem(k)||'';
+
+  async function loadCtx(url='/apps/hub/context/kobllux.context.json'){ const r=await fetch(url,{cache:'no-store'}); return r.json(); }
+  function gateKODUX(){ return (LS('infodose:userName')==='KODUX'||LS('dual.name')==='KODUX'||LS('infodose:userRole')==='KODUX'); }
+  function label(ctx, cmdKey){
+    const c = ctx.commands[cmdKey]; const lang = localStorage.getItem('kobllux.lang')||ctx.i18n.default||'pt';
+    const key = c?.ui?.label_i18n?.[lang] || c?.ui?.label_i18n?.pt || '';
+    return T(ctx)(key) || cmdKey;
+  }
+
+  function emit(topic,payload){ BUS.postMessage({topic,payload,ts:Date.now(),source:'KOBLLUX'}); (window.feedPush||console.log)('status','▶ '+(payload.entry||payload.module)); }
+
+  function run(ctx, cmdKey){
+    const c = ctx.commands[cmdKey]; if(!c) return;
+    if (c.gate && !gateKODUX()){
+      const msg = T(ctx)('denied');
+      (window.feedPush||console.log)('status','⛔ '+(msg||'Denied'));
+      return;
+    }
+    emit(c.dispatch.topic, c.dispatch.payload);
+  }
+
+  function icon(name){
+    const m = {
+      empresa:'icons/building.svg',
+      estado:'icons/rocket.svg',
+      dose:'icons/pills.svg'
+    };
+    return m[name]||'icons/bolt.svg';
+  }
+
+  function mountMenu(ctx){
+    const btn = document.querySelector('#btnKOBLLUX');
+    if(!btn || btn.__kobMounted) return; btn.__kobMounted=true;
+
+    const make = ()=>{
+      const el = document.createElement('div'); el.className='kobllux-menu'; el.style.display='none';
+      el.innerHTML = `
+        <div class="kobllux-badge">KOBLLUX · Glow</div>
+        <div class="itm" data-cmd="empresa.activate"><img class="ico" src="${icon('empresa')}" alt=""><span>${label(ctx,'empresa.activate')}</span></div>
+        <div class="itm" data-cmd="estado.activate"><img class="ico" src="${icon('estado')}" alt=""><span>${label(ctx,'estado.activate')}</span></div>
+        <div class="kobllux-sep"></div>
+        <div class="itm" data-cmd="dose.fitness"><img class="ico" src="${icon('dose')}" alt=""><span>${label(ctx,'dose.fitness')}</span></div>
+        <div class="itm" data-cmd="dose.criativa"><img class="ico" src="${icon('dose')}" alt=""><span>${label(ctx,'dose.criativa')}</span></div>
+        <div class="itm" data-cmd="dose.empresarial"><img class="ico" src="${icon('dose')}" alt=""><span>${label(ctx,'dose.empresarial')}</span></div>
+        <div class="kobllux-sep"></div>
+        <div class="itm" data-lang="pt"><img class="ico" src="icons/flag-br.svg" alt=""><span>Português</span></div>
+        <div class="itm" data-lang="en"><img class="ico" src="icons/flag-us.svg" alt=""><span>English</span></div>
+      `;
+      document.body.appendChild(el);
+
+      // posiciona sob o botão
+      function place(){
+        const r = btn.getBoundingClientRect();
+        el.style.left = Math.round(r.left)+'px';
+        el.style.top  = Math.round(r.bottom+8)+'px';
+      }
+
+      function open(){ place(); el.style.display='block'; requestAnimationFrame(place); }
+      function close(){ el.style.display='none'; }
+      function toggle(){ (el.style.display==='block') ? close() : open(); }
+
+      btn.addEventListener('click', (ev)=>{ ev.preventDefault(); ev.stopPropagation(); toggle(); }, {passive:false});
+      document.addEventListener('click', (e)=>{ if(!el.contains(e.target) && e.target!==btn) close(); }, {passive:true});
+      window.addEventListener('resize', place);
+
+      el.addEventListener('click', (e)=>{
+        const item = e.target.closest('.itm'); if(!item) return;
+        const lang = item.getAttribute('data-lang');
+        if (lang){ localStorage.setItem('kobllux.lang', lang); document.body.dispatchEvent(new Event('kobllux:lang')); close(); return; }
+        const cmd = item.getAttribute('data-cmd'); if(cmd){ run(ctx, cmd); close(); }
+      });
+
+      // Re-render labels quando mudar idioma
+      document.body.addEventListener('kobllux:lang', ()=>{
+        el.querySelector('[data-cmd="empresa.activate"] span').textContent = label(ctx,'empresa.activate');
+        el.querySelector('[data-cmd="estado.activate"] span').textContent  = label(ctx,'estado.activate');
+        el.querySelector('[data-cmd="dose.fitness"] span').textContent     = label(ctx,'dose.fitness');
+        el.querySelector('[data-cmd="dose.criativa"] span').textContent    = label(ctx,'dose.criativa');
+        el.querySelector('[data-cmd="dose.empresarial"] span').textContent = label(ctx,'dose.empresarial');
+      });
+    };
+
+    make();
+  }
+
+  const ctx = await loadCtx();
+  mountMenu(ctx);
+})();
+</script>      
 </body></html>
