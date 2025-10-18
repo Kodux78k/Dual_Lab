@@ -973,6 +973,47 @@ body::after{content:'';position:fixed;inset:0;background:none !important;pointer
   .arch-circle .call{ font-size:12px; }
 }
 </style>
+  <style id="chat-improvements-css">
+    /* Chat improvements: spinner, copy button, regenerate */
+    .msg.loading{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      padding:8px;
+      font-size:14px;
+    }
+    .spinner{
+      border:4px solid rgba(255,255,255,.3);
+      border-top:4px solid #3388ff;
+      border-radius:50%;
+      width:20px;
+      height:20px;
+      animation:spin 1s linear infinite;
+    }
+    @keyframes spin{
+      to{transform:rotate(360deg);}
+    }
+    .copy-btn{
+      position:absolute;
+      top:6px;
+      right:6px;
+      font-size:10px;
+      padding:2px 6px;
+      border-radius:4px;
+      background:#444;
+      color:#fff;
+      border:none;
+      cursor:pointer;
+    }
+    .copy-btn:active{
+      background:#555;
+    }
+    .regen-btn{
+      margin-top:6px;
+      font-size:12px;
+      padding:4px 8px;
+    }
+  </style>
 <style id="blue1Theme">
 /* === Blue‑1 Theme (UI) === */
 :root {
@@ -4666,6 +4707,46 @@ window.addEventListener('load', () => {
     });
   }
 
+  // ---------- Chat Enhancements ----------
+  // Store last user message to support regeneration
+  let lastUserMessage = '';
+  // Add copy buttons to code blocks in a given container.
+  function attachCodeCopyButtons(container){
+    if(!container) return;
+    const codes = container.querySelectorAll('pre > code');
+    codes.forEach((code) => {
+      const pre = code.parentElement;
+      if (pre && !pre.querySelector('.copy-btn')){
+        pre.style.position = 'relative';
+        const btn = document.createElement('button');
+        btn.className = 'copy-btn';
+        btn.textContent = 'Copiar';
+        btn.addEventListener('click', () => {
+          navigator.clipboard.writeText(code.textContent).then(() => {
+            const prev = btn.textContent;
+            btn.textContent = 'Copiado';
+            setTimeout(() => { btn.textContent = prev; }, 2000);
+          });
+        });
+        pre.appendChild(btn);
+      }
+    });
+  }
+  // Append a regenerate button to a container. Clicking regenerates last user message.
+  function appendRegenerateButton(container){
+    if(!container) return;
+    // Avoid adding multiple regenerate buttons
+    if (container.querySelector('.regen-btn')) return;
+    const btn = document.createElement('button');
+    btn.className = 'btn regen-btn';
+    btn.textContent = 'Regenerar resposta';
+    btn.addEventListener('click', () => {
+      if (typeof sendUserMessage === 'function' && lastUserMessage){
+        sendUserMessage(lastUserMessage);
+      }
+    });
+    container.appendChild(btn);
+  }
   // Delegation: clicking an emoji sends it as a new message
   const chatFeed = document.getElementById('chatFeed');
   if (chatFeed) {
@@ -4842,6 +4923,9 @@ window.addEventListener('load', () => {
     }
     feed.appendChild(wrap);
     wrapEmojisInEl(wrap);
+    // After emojis replaced, attach copy buttons and regenerate control
+    attachCodeCopyButtons(wrap);
+    appendRegenerateButton(wrap);
     feed.scrollTop = feed.scrollHeight;
     // Update preview and voice (speak only the reward block text stripped)
     try {
@@ -4858,6 +4942,8 @@ window.addEventListener('load', () => {
   async function sendUserMessage(msg){
     const text = String(msg||'').trim();
     if (!text) return;
+    // Remember last message for regen
+    lastUserMessage = text;
     // Show in feeds + voice status
     if (typeof feedPush === 'function') feedPush('user', 'Você: ' + text);
     try {
@@ -4873,13 +4959,27 @@ window.addEventListener('load', () => {
     const userName = (localStorage.getItem('dual.name') || localStorage.getItem('infodose:userName') || '').trim();
     const sk = (localStorage.getItem('dual.keys.openrouter') || localStorage.getItem('infodose:sk') || '').trim();
     let model = (window.LS && LS.get && LS.get('dual.openrouter.model')) || (localStorage.getItem('infodose:model') || '').trim() || 'openrouter/auto';
+    // Show loading spinner in chat feed
+    let loadingEl;
+    const feedDom = document.getElementById('chatFeed');
+    if (feedDom){
+      loadingEl = document.createElement('div');
+      loadingEl.className = 'msg ai loading';
+      loadingEl.innerHTML = '<div class="spinner"></div><span>Gerando resposta...</span>';
+      feedDom.appendChild(loadingEl);
+      feedDom.scrollTop = feedDom.scrollHeight;
+    }
     // Call
     try {
       const reply = await sendAIMessageCtx({ userContent: text, sk, model });
       if (reply) {
+        // Remove loading spinner
+        if (loadingEl && feedDom && feedDom.contains(loadingEl)) feedDom.removeChild(loadingEl);
         renderAssistantReply(reply);
       }
     } catch (err) {
+      // Remove loading spinner on error
+      if (loadingEl && feedDom && feedDom.contains(loadingEl)) feedDom.removeChild(loadingEl);
       console.error(err);
       if (typeof feedPush === 'function') feedPush('status', '❌ Erro ao obter resposta.');
     }
